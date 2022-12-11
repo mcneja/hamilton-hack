@@ -741,9 +741,10 @@ function discsOverlap(disc0, disc1) {
 }
 function createBeginFrame(gl) {
     return (screenSize) => {
-        resizeCanvasToDisplaySize(gl.canvas);
-        const screenX = gl.canvas.clientWidth;
-        const screenY = gl.canvas.clientHeight;
+        const canvas = gl.canvas;
+        resizeCanvasToDisplaySize(canvas);
+        const screenX = canvas.clientWidth;
+        const screenY = canvas.clientHeight;
         gl.viewport(0, 0, screenX, screenY);
         gl.clear(gl.COLOR_BUFFER_BIT);
         vec2.set(screenSize, screenX, screenY);

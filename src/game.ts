@@ -1071,10 +1071,12 @@ function discsOverlap(disc0: Disc, disc1: Disc): boolean {
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
     return (screenSize) => {
-        resizeCanvasToDisplaySize(gl.canvas);
+        const canvas = gl.canvas as HTMLCanvasElement;
 
-        const screenX = gl.canvas.clientWidth;
-        const screenY = gl.canvas.clientHeight;
+        resizeCanvasToDisplaySize(canvas);
+
+        const screenX = canvas.clientWidth;
+        const screenY = canvas.clientHeight;
     
         gl.viewport(0, 0, screenX, screenY);
         gl.clear(gl.COLOR_BUFFER_BIT);
