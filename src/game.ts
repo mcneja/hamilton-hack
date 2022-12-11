@@ -1,8 +1,5 @@
 /*
-    TODO
-
-[ ] Change distance-field renderer to use a float texture
-
+    Hamiltonian Path Hacking Minigame
 */
 
 import { vec2, mat4 } from './my-matrix.js';
