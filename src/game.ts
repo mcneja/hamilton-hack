@@ -13,64 +13,13 @@ enum TerrainType {
     Room,
 }
 
-enum GameState {
-    Active,
-    Died,
-    Won,
-}
-
-enum PotionType {
-    Health,
-    Invulnerability,
-}
-
 const playerRadius = 0.5;
-const playerMaxHitPoints = 4;
 const bulletRadius = 0.25;
 const bulletMinSpeed = 4;
-const bulletMaxCapacity = 5;
-const bulletRefillRate = 2.5;
-const monsterRadius = 0.5;
-const lootRadius = 0.5;
-const turretFireDelayStart = 4.0;
-const turretFireDelayEnd = 2.0;
-const turretFireSpeed = 10.0;
-const turretBulletLifetime = 4.0;
-const invulnerabilityDuration = 6.0;
-const swarmerAttackCooldownDuration = 2.0;
-const pickupMessageDuration = 2.0;
 
 const numCellsX = 4;
 const numCellsY = 4;
 const corridorWidth = 3;
-
-const damageDisplayDuration = 1.5;
-const delayGameEndMessage = 2;
-
-class Float64Grid {
-    sizeX: number;
-    sizeY: number;
-    values: Float64Array;
-
-    constructor(sizeX: number, sizeY: number, initialValue: number) {
-        this.sizeX = sizeX;
-        this.sizeY = sizeY;
-        this.values = new Float64Array(sizeX * sizeY);
-        this.fill(initialValue);
-    }
-
-    fill(value: number) {
-        this.values.fill(value);
-    }
-
-    get(x: number, y: number): number {
-        return this.values[this.sizeX * y + x];
-    }
-
-    set(x: number, y: number, value: number) {
-        this.values[this.sizeX * y + x] = value;
-    }
-}
 
 class BooleanGrid {
     sizeX: number;
@@ -133,20 +82,7 @@ type Player = {
     position: vec2;
     velocity: vec2;
     radius: number;
-    numInvulnerabilityPotions: number;
-    invulnerabilityTimer: number;
-    numBullets: number;
-    amuletCollected: boolean;
-    hitPoints: number;
-    damageDisplayTimer: number;
-    swarmerAttackCooldown: number;
-    dead: boolean;
 };
-
-type ColliderBody = {
-    position: vec2;
-    velocity: vec2;
-}
 
 type Bullet = {
     position: vec2;
@@ -175,55 +111,11 @@ type GlyphDisc = {
     glyphColor: number;
 }
 
-type Spike = {
-    position: vec2;
-    velocity: vec2;
-    radius: number;
-    onContactCooldown: boolean;
-    dead: boolean;
-}
-
-type Turret = {
-    position: vec2;
-    velocity: vec2;
-    radius: number;
-    onContactCooldown: boolean;
-    dead: boolean;
-    timeToFire: number;
-}
-
-type Swarmer = {
-    position: vec2;
-    velocity: vec2;
-    radius: number;
-    heading: number;
-    headingRate: number;
-    onContactCooldown: boolean;
-    dead: boolean;
-}
-
-type Potion = {
-    position: vec2;
-    potionType: number;
-}
-
-type LootItem = {
-    position: vec2;
-}
-
 type Level = {
     solid: BooleanGrid;
     vertexData: ArrayBuffer;
     playerStartPos: vec2;
     startRoom: Rect;
-    amuletRoom: Rect;
-    amuletPos: vec2;
-    spikes: Array<Spike>;
-    turrets: Array<Turret>;
-    swarmers: Array<Swarmer>;
-    potions: Array<Potion>;
-    lootItems: Array<LootItem>;
-    numLootItemsTotal: number;
 }
 
 type RenderRects = {
@@ -253,7 +145,6 @@ type Renderer = {
 }
 
 type State = {
-    distanceFieldFromExit: Float64Grid;
     renderColoredTriangles: RenderColoredTriangles;
     tLast: number | undefined;
     paused: boolean;
@@ -262,14 +153,9 @@ type State = {
     mapZoomVelocity: number;
     mouseSensitivity: number;
     player: Player;
-    gameState: GameState;
-    timeToGameEndMessage: number;
     playerBullets: Array<Bullet>;
-    turretBullets: Array<Bullet>;
     camera: Camera;
     level: Level;
-    pickupMessage: Array<string>;
-    pickupMessageTimer: number;
 }
 
 function loadResourcesThenRun() {
@@ -310,27 +196,6 @@ function main(fontImage: HTMLImageElement) {
                 state.mapZoomVelocity = 0;
                 requestUpdateAndRender();
             }
-        } else if (e.code == 'Period') {
-            e.preventDefault();
-            state.mouseSensitivity += 1;
-            if (state.paused) {
-                requestUpdateAndRender();
-            } else {
-                setPickupMessage(state, ['Mouse sensitivity: ' + state.mouseSensitivity]);
-            }
-        } else if (e.code == 'Comma') {
-            e.preventDefault();
-            state.mouseSensitivity -= 1;
-            if (state.paused) {
-                requestUpdateAndRender();
-            } else {
-                setPickupMessage(state, ['Mouse sensitivity: ' + state.mouseSensitivity]);
-            }
-        } else if (e.code == 'Space') {
-            e.preventDefault();
-            if (!state.paused) {
-                tryDrinkInvulnerabilityPotion(state);
-            }
         }
     });
 
@@ -346,7 +211,6 @@ function main(fontImage: HTMLImageElement) {
             if (state.paused) {
                 state.paused = false;
                 state.tLast = undefined;
-                state.timeToGameEndMessage = delayGameEndMessage;
                 requestUpdateAndRender();
             }
         } else {
@@ -366,8 +230,6 @@ function main(fontImage: HTMLImageElement) {
         }
         if (e.button == 0) {
             tryShootBullet(state);
-        } else if (e.button == 2) {
-            tryDrinkInvulnerabilityPotion(state);
         }
     }
 
@@ -392,36 +254,12 @@ const loadImage = (src: string) =>
     });
 
 function updatePosition(state: State, e: MouseEvent) {
-    if (state.player.hitPoints <= 0) {
-        return;
-    }
-
     const movement = vec2.fromValues(e.movementX, -e.movementY);
     const scale = 0.05 * Math.pow(1.1, state.mouseSensitivity);
     vec2.scaleAndAdd(state.player.velocity, state.player.velocity, movement, scale);
 }
 
-function tryDrinkInvulnerabilityPotion(state: State) {
-    if (state.player.hitPoints <= 0) {
-        return;
-    }
-
-    if (state.player.numInvulnerabilityPotions < 1) {
-        setPickupMessage(state, ['No Invulnerability Potion']);
-        return;
-    }
-
-    state.player.numInvulnerabilityPotions -= 1;
-    state.player.invulnerabilityTimer = Math.max(state.player.invulnerabilityTimer, invulnerabilityDuration);
-}
-
 function tryShootBullet(state: State) {
-    if (state.player.hitPoints <= 0 || state.player.numBullets < 1) {
-        return;
-    }
-
-    state.player.numBullets -= 1;
-
     const pos = vec2.create();
     vec2.copy(pos, state.player.position);
     const vel = vec2.create();
@@ -445,47 +283,6 @@ function updatePlayerBullet(state: State, bullet: Bullet, dt: number) {
 
     bullet.timeRemaining -= dt;
     if (bullet.timeRemaining <= 0) {
-        return false;
-    }
-
-    let hitSomething = false;
-
-    for (const spike of state.level.spikes) {
-        if (spike.dead) {
-            continue;
-        }
-
-        if (areDiscsTouching(bullet.position, bulletRadius, spike.position, monsterRadius)) {
-            spike.dead = true;
-            hitSomething = true;
-        }
-    }
-
-    for (const turret of state.level.turrets) {
-        if (turret.dead) {
-            continue;
-        }
-
-        if (areDiscsTouching(bullet.position, bulletRadius, turret.position, monsterRadius)) {
-            vec2.scaleAndAdd(turret.velocity, turret.velocity, bullet.velocity, 0.2);
-            turret.dead = true;
-            hitSomething = true;
-        }
-    }
-
-    for (const swarmer of state.level.swarmers) {
-        if (swarmer.dead) {
-            continue;
-        }
-
-        if (areDiscsTouching(bullet.position, bulletRadius, swarmer.position, swarmer.radius)) {
-            swarmer.dead = true;
-            vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, bullet.velocity, 0.2);
-            hitSomething = true;
-        }
-    }
-
-    if (hitSomething) {
         return false;
     }
 
@@ -513,371 +310,12 @@ function renderPlayer(state: State, renderer: Renderer, matScreenFromWorld: mat4
     const discs = [{
         position: state.player.position,
         radius: state.player.radius,
-        discColor: (state.player.invulnerabilityTimer > 0) ? 0xffffff00 : 0xff000000,
-        glyphColor: (state.player.hitPoints > 0) ? 0xff00ffff : 0xff0020ff,
+        discColor: 0xff000000,
+        glyphColor: 0xff00ffff,
         glyphIndex: 1,
     }];
 
     renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function updateTurretBullets(state: State, dt: number) {
-    filterInPlace(state.turretBullets, bullet => updateTurretBullet(state, bullet, dt));
-}
-
-function updateTurretBullet(state: State, bullet: Bullet, dt: number) {
-    vec2.scaleAndAdd(bullet.position, bullet.position, bullet.velocity, dt);
-
-    bullet.timeRemaining -= dt;
-    if (bullet.timeRemaining <= 0) {
-        return false;
-    }
-
-    if (isDiscTouchingLevel(bullet.position, bulletRadius, state.level.solid)) {
-        return false;
-    }
-
-    const playerMass = 1;
-    const bulletMass = 0.125;
-    const elasticity = 1;
-
-    if (areDiscsTouching(bullet.position, bulletRadius, state.player.position, playerRadius)) {
-        elasticCollision(state.player, bullet, playerMass, bulletMass, elasticity);
-        if (state.player.invulnerabilityTimer <= 0) {
-            damagePlayer(state, 1);
-        }
-        return false;
-    }
-
-    return true;
-}
-
-function renderTurretBullets(bullets: Array<Bullet>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const color = 0xff4080ff;
-    const discs = bullets.map(bullet => ({
-        position: bullet.position,
-        radius: bulletRadius,
-        discColor: color,
-        glyphColor: color,
-        glyphIndex: 0,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function updateSpikes(state: State, dt: number) {
-    const velPrev = vec2.create();
-    const dpos = vec2.create();
-    for (const spike of state.level.spikes) {
-        vec2.copy(velPrev, spike.velocity);
-        slideToStop(spike, dt);
-        vec2.scaleAndAdd(spike.position, spike.position, velPrev, dt / 2);
-        vec2.scaleAndAdd(spike.position, spike.position, spike.velocity, dt / 2);
-
-        // Disable cooldown once spike is no longer near player.
-
-        if (spike.onContactCooldown) {
-            vec2.subtract(dpos, spike.position, state.player.position);
-            if (vec2.length(dpos) >= 1.5 * monsterRadius + playerRadius) {
-                spike.onContactCooldown = false;
-            }
-        }
-    }
-
-    // Fix up spike positions relative to the environment and other objects.
-
-    for (let i = 0; i < state.level.spikes.length; ++i) {
-        const spike0 = state.level.spikes[i];
-
-        fixupPositionAndVelocityAgainstLevel(spike0.position, spike0.velocity, spike0.radius, state.level.solid);
-
-        if (spike0.dead)
-            continue;
-
-        for (let j = i + 1; j < state.level.spikes.length; ++j) {
-            const spike1 = state.level.spikes[j];
-            if (spike1.dead)
-                continue;
-
-            fixupDiscPair(spike0, spike1);
-        }
-    }
-}
-
-function setPickupMessage(state: State, message: Array<string>) {
-    state.pickupMessage = message;
-    state.pickupMessageTimer = pickupMessageDuration;
-}
-
-function fractionOfLootCollected(state: State): number {
-    return (state.level.numLootItemsTotal - state.level.lootItems.length) / state.level.numLootItemsTotal;
-}
-
-function turretFireDelay(state: State): number {
-    return lerp(turretFireDelayStart, turretFireDelayEnd, fractionOfLootCollected(state));
-}
-
-function updateTurrets(state: State, dt: number) {
-    const dpos = vec2.create();
-
-    for (const turret of state.level.turrets) {
-        slideToStop(turret, dt);
-        vec2.scaleAndAdd(turret.position, turret.position, turret.velocity, dt);
-
-        // Disable cooldown once spike is no longer near player.
-
-        if (turret.onContactCooldown) {
-            vec2.subtract(dpos, turret.position, state.player.position);
-            if (vec2.length(dpos) >= 1.5 * monsterRadius + playerRadius) {
-                turret.onContactCooldown = false;
-            }
-        }
-
-        if (!turret.dead) {
-            turret.timeToFire -= dt;
-            if (turret.timeToFire <= 0) {
-                turret.timeToFire += turretFireDelay(state);
-
-                if (distanceBetween(turret.position, state.player.position) < 20) {
-                    const dpos = vec2.create();
-                    vec2.subtract(dpos, state.player.position, turret.position);
-                    const d = Math.max(1.0e-6, vec2.length(dpos));
-
-                    const pos = vec2.create();
-                    vec2.scaleAndAdd(pos, turret.position, dpos, turret.radius / d);
-
-                    const vel = vec2.create();
-                    vec2.scale(vel, dpos, turretFireSpeed / d);
-
-                    const bullet = {
-                        position: pos,
-                        velocity: vel,
-                        timeRemaining: turretBulletLifetime,
-                    };
-
-                    state.turretBullets.push(bullet);
-                }
-            }
-        }
-    }
-
-    // Fix up turret positions relative to the environment and other objects.
-
-    for (let i = 0; i < state.level.turrets.length; ++i) {
-        const turret0 = state.level.turrets[i];
-
-        fixupPositionAndVelocityAgainstLevel(turret0.position, turret0.velocity, turret0.radius, state.level.solid);
-
-        if (turret0.dead)
-            continue;
-
-        for (const spike of state.level.spikes) {
-            if (spike.dead)
-                continue;
-
-            fixupDiscPair(turret0, spike);
-        }
-
-        for (let j = i + 1; j < state.level.turrets.length; ++j) {
-            const turret1 = state.level.turrets[j];
-            if (turret1.dead)
-                continue;
-
-            fixupDiscPair(turret0, turret1);
-        }
-    }
-}
-
-function updateSwarmers(state: State, dt: number) {
-    const uLoot = fractionOfLootCollected(state);
-    const accelerationRate = lerp(10, 20, uLoot);
-    const dragAccelerationRate = 3;
-    const perturbationAccelerationRate = 8;
-    const separationDist = 5;
-    const separationForce = 1;
-
-    const velPrev = vec2.create();
-    const perturbationDir = vec2.create();
-    const dpos = vec2.create();
-
-    for (const swarmer of state.level.swarmers) {
-        vec2.copy(velPrev, swarmer.velocity);
-
-        swarmer.heading += swarmer.headingRate * dt;
-        swarmer.heading -= Math.floor(swarmer.heading);
-
-        if (swarmer.dead) {
-            slideToStop(swarmer, dt);
-        } else {
-            const heading = swarmer.heading * 2 * Math.PI;
-            vec2.set(perturbationDir, Math.cos(heading), Math.sin(heading));
-
-            if (state.player.hitPoints > 0 && state.player.swarmerAttackCooldown <= 0) {
-                const dposToTarget = vec2.create();
-                vec2.subtract(dposToTarget, swarmer.position, state.player.position);
-                const distToTarget = vec2.length(dposToTarget);
-    
-                if (distToTarget < 24 && clearLineOfSight(state.level.solid, swarmer.position, state.player.position)) {            
-                    vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, dposToTarget, -accelerationRate * dt / distToTarget);
-                }
-            }
-
-            vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, perturbationDir, perturbationAccelerationRate * dt);
-            vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, velPrev, -dragAccelerationRate * dt);
-
-            // Avoid other spikes, turrets, and swarmers
-
-            for (const spike of state.level.spikes) {
-                if (spike.dead)
-                    continue;
-                vec2.subtract(dpos, spike.position, swarmer.position);
-                const dist = vec2.length(dpos);
-                if (dist < separationDist) {
-                    const scale = (dist - separationDist) * (separationForce * dt / dist);
-                    vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, dpos, scale);
-                }
-            }
-
-            for (const turret of state.level.turrets) {
-                if (turret.dead)
-                    continue;
-                vec2.subtract(dpos, turret.position, swarmer.position);
-                const dist = vec2.length(dpos);
-                if (dist < separationDist) {
-                    const scale = (dist - separationDist) * (separationForce * dt / dist);
-                    vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, dpos, scale);
-                }
-            }
-
-            for (const swarmerOther of state.level.swarmers) {
-                if (swarmerOther.dead)
-                    continue;
-                if (swarmerOther == swarmer)
-                    continue;
-
-                vec2.subtract(dpos, swarmerOther.position, swarmer.position);
-                const dist = vec2.length(dpos);
-                if (dist < separationDist) {
-                    const scale = (dist - separationDist) * (separationForce * dt / dist);
-                    vec2.scaleAndAdd(swarmer.velocity, swarmer.velocity, dpos, scale);
-                }
-            }
-        }
-
-        vec2.scaleAndAdd(swarmer.position, swarmer.position, velPrev, dt / 2);
-        vec2.scaleAndAdd(swarmer.position, swarmer.position, swarmer.velocity, dt / 2);
-
-        // Disable cooldown once swarmer is no longer near player.
-
-        if (swarmer.onContactCooldown) {
-            vec2.subtract(dpos, swarmer.position, state.player.position);
-            if (vec2.length(dpos) >= 1.5 * monsterRadius + playerRadius) {
-                swarmer.onContactCooldown = false;
-            }
-        }
-    }
-
-    // Fix up swarmer positions relative to the environment and other objects.
-
-    for (let i = 0; i < state.level.swarmers.length; ++i) {
-        const swarmer0 = state.level.swarmers[i];
-
-        fixupPositionAndVelocityAgainstLevel(swarmer0.position, swarmer0.velocity, swarmer0.radius, state.level.solid);
-
-        if (swarmer0.dead)
-            continue;
-
-        for (let j = i + 1; j < state.level.swarmers.length; ++j) {
-            const swarmer1 = state.level.swarmers[j];
-            if (swarmer1.dead)
-                continue;
-
-            fixupDiscPair(swarmer0, swarmer1);
-        }
-    }
-}
-
-function renderSpikesDead(spikes: Array<Spike>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const discs = spikes.filter(spike => spike.dead).map(spike => ({
-        position: spike.position,
-        radius: monsterRadius,
-        discColor: 0xff737373,
-        glyphColor: 0xff808080,
-        glyphIndex: 111,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function renderSpikesAlive(spikes: Array<Spike>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const discs = spikes.filter(spike => !spike.dead).map(spike => ({
-        position: spike.position,
-        radius: monsterRadius,
-        discColor: 0xff405840,
-        glyphColor: 0xff80b080,
-        glyphIndex: 111,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function renderTurretsDead(turrets: Array<Turret>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const color = { r: 0.45, g: 0.45, b: 0.45 };
-    const discs = turrets.filter(turret => turret.dead).map(turret => ({
-        position: turret.position,
-        radius: monsterRadius,
-        discColor: 0xff737373,
-        glyphColor: 0xff808080,
-        glyphIndex: 119,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function renderTurretsAlive(state: State, turrets: Array<Turret>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const colorWindup = 0xff4080ff;
-    const color = 0xff404058;
-    const discs = turrets.filter(turret => !turret.dead).map(turret => ({
-        position: turret.position,
-        radius: monsterRadius,
-        discColor: colorLerp(colorWindup, color, Math.min(1, 4 * turret.timeToFire / turretFireDelay(state))),
-        glyphColor: 0xff8080b0,
-        glyphIndex: 119,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function renderSwarmersDead(swarmers: Array<Swarmer>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const discs = swarmers.filter(swarmer => swarmer.dead).map(swarmer => ({
-        position: swarmer.position,
-        radius: monsterRadius,
-        discColor: 0xff737373,
-        glyphColor: 0xff808080,
-        glyphIndex: 98,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function renderSwarmersAlive(swarmers: Array<Swarmer>, renderer: Renderer, matScreenFromWorld: mat4) {
-    const discs = swarmers.filter(swarmer => !swarmer.dead).map(swarmer => ({
-        position: swarmer.position,
-        radius: monsterRadius,
-        discColor: 0xff202020,
-        glyphColor: 0xff5555ff,
-        glyphIndex: 98,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function colorLerp(color0: number, color1: number, u: number): number {
-    const r = Math.floor(lerp(color0 & 0xff, color1 & 0xff, u));
-    const g = Math.floor(lerp((color0 >> 8) & 0xff, (color1 >> 8) & 0xff, u));
-    const b = Math.floor(lerp((color0 >> 16) & 0xff, (color1 >> 16) & 0xff, u));
-    const a = Math.floor(lerp((color0 >> 24) & 0xff, (color1 >> 24) & 0xff, u));
-    return (a << 24) + (b << 16) + (g << 8) + r;
 }
 
 function lerp(v0: number, v1: number, u: number): number {
@@ -941,13 +379,6 @@ function createPlayer(posStart: vec2): Player {
         position: vec2.create(),
         velocity: vec2.create(),
         radius: playerRadius,
-        numInvulnerabilityPotions: 1,
-        invulnerabilityTimer: 0,
-        numBullets: bulletMaxCapacity,
-        amuletCollected: false,
-        hitPoints: playerMaxHitPoints,
-        damageDisplayTimer: 0,
-        swarmerAttackCooldown: 0,
         dead: false,
     };
 
@@ -961,10 +392,8 @@ function initState(
     createColoredTrianglesRenderer: CreateColoredTrianglesRenderer): State {
 
     const level = createLevel();
-    const distanceFieldFromExit = createDistanceField(level.solid, level.amuletPos);
 
     return {
-        distanceFieldFromExit: distanceFieldFromExit,
         renderColoredTriangles: createColoredTrianglesRenderer(level.vertexData),
         tLast: undefined,
         paused: true,
@@ -973,14 +402,9 @@ function initState(
         mapZoomVelocity: 0,
         mouseSensitivity: 0,
         player: createPlayer(level.playerStartPos),
-        gameState: GameState.Active,
-        timeToGameEndMessage: delayGameEndMessage,
         playerBullets: [],
-        turretBullets: [],
         camera: createCamera(level.playerStartPos),
         level: level,
-        pickupMessage: [],
-        pickupMessageTimer: 0,
     };
 }
 
@@ -989,36 +413,12 @@ function resetState(
     createColoredTrianglesRenderer: CreateColoredTrianglesRenderer) {
 
     const level = createLevel();
-    const distanceFieldFromExit = createDistanceField(level.solid, level.amuletPos);
 
-    state.distanceFieldFromExit = distanceFieldFromExit;
     state.renderColoredTriangles = createColoredTrianglesRenderer(level.vertexData);
     state.player = createPlayer(level.playerStartPos);
-    state.gameState = GameState.Active;
-    state.timeToGameEndMessage = delayGameEndMessage;
     state.playerBullets = [];
-    state.turretBullets = [];
     state.camera = createCamera(level.playerStartPos);
     state.level = level;
-    state.pickupMessage = [];
-    state.pickupMessageTimer = 0;
-}
-
-function discOverlapsDiscs(disc: Disc, discs: Array<Disc>, minSeparation: number): boolean {
-    for (const disc2 of discs) {
-        const d = vec2.create();
-        vec2.subtract(d, disc2.position, disc.position);
-        if (vec2.squaredLength(d) < (disc2.radius + disc.radius + minSeparation)**2) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function discsOverlap(disc0: Disc, disc1: Disc): boolean {
-    const d = vec2.create();
-    vec2.subtract(d, disc1.position, disc0.position);
-    return vec2.squaredLength(d) < (disc1.radius + disc0.radius)**2;
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
@@ -1203,52 +603,6 @@ function createDiscVertexBuffer(gl: WebGL2RenderingContext) {
     gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
 
     return vertexBuffer;
-}
-
-function createVertexInfo(costRateField: Float64Grid, distanceField: Float64Grid): Float32Array {
-    const sizeX = costRateField.sizeX;
-    const sizeY = costRateField.sizeY;
-    const v = new Float32Array(7 * 6 * (sizeX - 1) * (sizeY - 1));
-    let i = 0;
-
-    function distance(x: number, y: number) {
-        return distanceField.get(x, y);
-    }
-
-    function speed(x: number, y: number) {
-        return 1 / costRateField.get(x, y);
-    }
-
-    function makeVert(x: number, y: number, s: number, d0: number, d1: number, c0: number, c1: number) {
-        v[i++] = x;
-        v[i++] = y;
-        v[i++] = s;
-        v[i++] = d0;
-        v[i++] = d1;
-        v[i++] = c0;
-        v[i++] = c1;
-    }
-
-    for (let y = 0; y < sizeY - 1; ++y) {
-        for (let x = 0; x < sizeX - 1; ++x) {
-            const dist00 = distance(x, y);
-            const dist10 = distance(x+1, y);
-            const dist01 = distance(x, y+1);
-            const dist11 = distance(x+1, y+1);
-            const speed00 = speed(x, y);
-            const speed10 = speed(x+1, y);
-            const speed01 = speed(x, y+1);
-            const speed11 = speed(x+1, y+1);
-            makeVert(x, y, 0, dist00, dist01, speed00, speed01);
-            makeVert(x+1, y, 0, dist10, dist11, speed10, speed11);
-            makeVert(x, y+1, 1, dist00, dist01, speed00, speed01);
-            makeVert(x, y+1, 1, dist00, dist01, speed00, speed01);
-            makeVert(x+1, y, 0, dist10, dist11, speed10, speed11);
-            makeVert(x+1, y+1, 1, dist10, dist11, speed10, speed11);
-        }
-    }
-
-    return v;
 }
 
 function createRectsRenderer(gl: WebGL2RenderingContext) {
@@ -1645,57 +999,16 @@ function createColoredTrianglesRenderer(gl: WebGL2RenderingContext): CreateColor
     };
 }
 
-function slideToStop(body: Disc, dt: number) {
-    const r = Math.exp(-3 * dt);
-    vec2.scale(body.velocity, body.velocity, r);
-}
-
-function posInRect(position: vec2, rect: Rect): boolean {
-    return (position[0] >= rect.minX &&
-            position[1] >= rect.minY &&
-            position[0] < rect.minX + rect.sizeX &&
-            position[1] < rect.minY + rect.sizeY);
-}
-
 function updateState(state: State, dt: number) {
 
     // Player
 
-    if (state.player.hitPoints <= 0) {
-        slideToStop(state.player, dt);
-    }
-
-    state.pickupMessageTimer = Math.max(0, state.pickupMessageTimer - dt);
-    state.player.swarmerAttackCooldown = Math.max(0, state.player.swarmerAttackCooldown - dt);
-    state.player.damageDisplayTimer = Math.max(0, state.player.damageDisplayTimer - dt);
-    state.player.invulnerabilityTimer = Math.max(0, state.player.invulnerabilityTimer - dt);
-    if (state.player.hitPoints > 0) {
-        state.player.numBullets = Math.min(bulletMaxCapacity, state.player.numBullets + bulletRefillRate * dt);
-    }
-
     vec2.scaleAndAdd(state.player.position, state.player.position, state.player.velocity, dt);
-
-    // Game-end message
-
-    state.timeToGameEndMessage = Math.max(0, state.timeToGameEndMessage - dt);
-
-    if (state.player.amuletCollected &&
-        state.gameState == GameState.Active &&
-        posInRect(state.player.position, state.level.startRoom)) {
-        state.gameState = GameState.Won;
-        state.timeToGameEndMessage = delayGameEndMessage;
-    }
 
     // Other
 
-    updateLootItems(state);
-    updatePotions(state);
     updateCamera(state, dt);
-    updateSpikes(state, dt);
-    updateTurrets(state, dt);
-    updateSwarmers(state, dt);
     updatePlayerBullets(state, dt);
-    updateTurretBullets(state, dt);
 
     // Collide player against objects and the environment
 
@@ -1705,50 +1018,6 @@ function updateState(state: State, dt: number) {
     const spikeMass = 1.5;
     const turretMass = 1;
     const swarmerMass = 0.25;
-
-    for (let i = 0; i < 4; ++i) {
-        for (const spike of state.level.spikes) {
-            if (!spike.dead) {
-                if (collideDiscs(state.player, spike, 1, spikeMass, spikeElasticity)) {
-                    if (state.player.invulnerabilityTimer > 0) {
-                        spike.dead = true;
-                    } else if (!spike.onContactCooldown) {
-                        damagePlayer(state, 1);
-                        spike.onContactCooldown = true;
-                    }
-                }
-            }
-        }
-
-        for (const turret of state.level.turrets) {
-            if (!turret.dead) {
-                if (collideDiscs(state.player, turret, 1, turretMass, turretElasticity)) {
-                    if (state.player.invulnerabilityTimer > 0) {
-                        turret.dead = true;
-                    } else if (!turret.onContactCooldown) {
-                        damagePlayer(state, 1);
-                        turret.onContactCooldown = true;
-                    }
-                }
-            }
-        }
-
-        for (const swarmer of state.level.swarmers) {
-            if (!swarmer.dead) {
-                if (collideDiscs(state.player, swarmer, 1, swarmerMass, swarmerElasticity)) {
-                    if (state.player.invulnerabilityTimer > 0) {
-                        swarmer.dead = true;
-                    } else if (!swarmer.onContactCooldown) {
-                        damagePlayer(state, 1);
-                        state.player.swarmerAttackCooldown = swarmerAttackCooldownDuration;
-                        swarmer.onContactCooldown = true;
-                    }
-                }
-            }
-        }
-    
-        fixupPositionAndVelocityAgainstLevel(state.player.position, state.player.velocity, state.player.radius, state.level.solid);
-    }
 }
 
 function updateCamera(state: State, dt: number) {
@@ -1798,89 +1067,6 @@ function updateCamera(state: State, dt: number) {
     vec2.copy(state.camera.velocity, velNew);
 }
 
-function generateRandomGaussianPair(mean: number, stdDev: number, pairOut: vec2) {
-    let s: number;
-    do {
-        pairOut[0] = Math.random() * 2 - 1;
-        pairOut[1] = Math.random() * 2 - 1;
-        s = vec2.squaredLength(pairOut);
-    } while (s >= 1 || s == 0);
-    s = stdDev * Math.sqrt(-2.0 * Math.log(s) / s);
-    vec2.scale(pairOut, pairOut, s);
-    vec2.add(pairOut, pairOut, vec2.fromValues(mean, mean));
-}
-
-function damagePlayer(state: State, numHitPoints: number) {
-    const hitPointsPrev = state.player.hitPoints;
-    state.player.hitPoints = Math.max(0, state.player.hitPoints - numHitPoints);
-    if (state.player.hitPoints >= hitPointsPrev)
-        return;
-
-    if (hitPointsPrev > 0) {
-        state.player.damageDisplayTimer = damageDisplayDuration;
-    }
-
-    state.player.invulnerabilityTimer = 0;
-
-    if (state.player.hitPoints <= 0 && state.gameState != GameState.Died) {
-        state.gameState = GameState.Died;
-        state.timeToGameEndMessage = delayGameEndMessage;
-    }
-}
-
-function fixupDiscPair(disc0: Disc, disc1: Disc) {
-    collideDiscs(disc0, disc1, 1, 1, 0);
-}
-
-function collideDiscs(disc0: Disc, disc1: Disc, mass0: number, mass1: number, elasticity: number) {
-    const dpos = vec2.create();
-    vec2.subtract(dpos, disc1.position, disc0.position);
-    const d = vec2.length(dpos);
-    const dist = d - (disc0.radius + disc1.radius);
-
-    if (dist >= 0) {
-        return false;
-    }
-
-    const scalePosFixup = dist / (d * (mass0 + mass1));
-    vec2.scaleAndAdd(disc0.position, disc0.position, dpos, scalePosFixup * mass1);
-    vec2.scaleAndAdd(disc1.position, disc1.position, dpos, -scalePosFixup * mass0);
-
-    const dvel = vec2.create();
-    vec2.subtract(dvel, disc1.velocity, disc0.velocity);
-    const vn = vec2.dot(dpos, dvel);
-
-    if (vn >= 0) {
-        return false;
-    }
-
-    const scaleVelFixup = ((1 + elasticity) * vn) / (d * d * (mass0 + mass1));
-    vec2.scaleAndAdd(disc0.velocity, disc0.velocity, dpos, scaleVelFixup * mass1);
-    vec2.scaleAndAdd(disc1.velocity, disc1.velocity, dpos, -scaleVelFixup * mass0);
-
-    return true;
-}
-
-function elasticCollision(body0: ColliderBody, body1: ColliderBody, mass0: number, mass1: number, elasticity: number): boolean {
-    const dpos = vec2.create();
-    vec2.subtract(dpos, body1.position, body0.position);
-    const d = vec2.length(dpos);
-
-    const dvel = vec2.create();
-    vec2.subtract(dvel, body1.velocity, body0.velocity);
-    const vn = vec2.dot(dpos, dvel);
-
-    if (vn >= 0) {
-        return false;
-    }
-
-    const scaleVelFixup = ((1 + elasticity) * vn) / (d * d * (mass0 + mass1));
-    vec2.scaleAndAdd(body0.velocity, body0.velocity, dpos, scaleVelFixup * mass1);
-    vec2.scaleAndAdd(body1.velocity, body1.velocity, dpos, -scaleVelFixup * mass0);
-
-    return true;
-}
-
 function isDiscTouchingLevel(discPos: vec2, discRadius: number, solid: BooleanGrid): boolean {
     const gridMinX = Math.max(0, Math.floor(discPos[0] - discRadius));
     const gridMinY = Math.max(0, Math.floor(discPos[1] - discRadius));
@@ -1908,180 +1094,6 @@ function isDiscTouchingLevel(discPos: vec2, discRadius: number, solid: BooleanGr
     return false;
 }
 
-function areDiscsTouching(pos0: vec2, radius0: number, pos1: vec2, radius1: number): boolean {
-    const dpos = vec2.create();
-    vec2.subtract(dpos, pos1, pos0);
-    const d = vec2.length(dpos);
-    return d < radius0 + radius1;
-}
-
-type Plane = {
-    unitDir: vec2;
-    d: number;
-}
-
-function fixupPositionAndVelocityAgainstLevel(position: vec2, velocity: vec2, radius: number, solid: BooleanGrid) {
-
-    let vNormalMin = 0;
-
-    for (let i = 0; i < 4; ++i) {
-        const gridMinX = Math.max(0, Math.floor(position[0] - radius));
-        const gridMinY = Math.max(0, Math.floor(position[1] - radius));
-        const gridMaxX = Math.min(solid.sizeX, Math.floor(position[0] + radius + 1));
-        const gridMaxY = Math.min(solid.sizeY, Math.floor(position[1] + radius + 1));
-
-        let smallestSeparatingAxis = {unitDir: vec2.fromValues(0, 0), d: radius};
-
-        for (let gridX = gridMinX; gridX <= gridMaxX; ++gridX) {
-            for (let gridY = gridMinY; gridY <= gridMaxY; ++gridY) {
-                const isSolid = solid.get(gridX, gridY);
-                if (!isSolid) {
-                    continue;
-                }
-                const dx = position[0] - (0.5 + gridX);
-                const dy = position[1] - (0.5 + gridY);
-
-                const axis = separatingAxis(dx, dy);
-
-                if (axis.d < smallestSeparatingAxis.d) {
-                    smallestSeparatingAxis = axis;
-                }
-            }
-        }
-
-        smallestSeparatingAxis.d -= radius;
-
-        if (smallestSeparatingAxis.d < 0) {
-            vec2.scaleAndAdd(position, position, smallestSeparatingAxis.unitDir, -smallestSeparatingAxis.d);
-            const vNormal = vec2.dot(smallestSeparatingAxis.unitDir, velocity);
-            vNormalMin = Math.min(vNormalMin, vNormal);
-            vec2.scaleAndAdd(velocity, velocity, smallestSeparatingAxis.unitDir, -vNormal);
-        }
-    }
-
-    const xMin = radius;
-    const yMin = radius;
-    const xMax = solid.sizeX - radius;
-    const yMax = solid.sizeY - radius;
-
-    if (position[0] < xMin) {
-        position[0] = xMin;
-        velocity[0] = 0;
-    } else if (position[0] > xMax) {
-        position[0] = xMax;
-        velocity[0] = 0;
-    }
-    if (position[1] < yMin) {
-        position[1] = yMin;
-        velocity[1] = 0;
-    } else if (position[1] > yMax) {
-        position[1] = yMax;
-        velocity[1] = 0;
-    }
-
-    return -vNormalMin;
-}
-
-function separatingAxis(dx: number, dy: number): Plane {
-    const ax = Math.abs(dx) - 0.5;
-    const ay = Math.abs(dy) - 0.5;
-    const sx = Math.sign(dx);
-    const sy = Math.sign(dy);
-    if (ax > ay) {
-        if (ay > 0) {
-            const d = Math.sqrt(ax**2 + ay**2);
-            return {unitDir: vec2.fromValues(sx * ax / d, sy * ay / d), d: d};
-        } else {
-            return {unitDir: vec2.fromValues(sx, 0), d: ax};
-        }
-    } else {
-        if (ax > 0) {
-            const d = Math.sqrt(ax**2 + ay**2);
-            return {unitDir: vec2.fromValues(sx * ax / d, sy * ay / d), d: d};
-        } else {
-            return {unitDir: vec2.fromValues(0, sy), d: ay};
-        }
-    }
-}
-
-function distanceBetween(pos0: vec2, pos1: vec2): number {
-    const dpos = vec2.create();
-    vec2.subtract(dpos, pos1, pos0);
-    return vec2.length(dpos);
-}
-
-function clearLineOfSight(solid: BooleanGrid, pos0: vec2, pos1: vec2): boolean {
-    const dx = Math.abs(pos1[0] - pos0[0]);
-    const dy = Math.abs(pos1[1] - pos0[1]);
-
-    let x = Math.floor(pos0[0]);
-    let y = Math.floor(pos0[1]);
-
-    let n = 1;
-    let xInc, yInc, error;
-
-    if (pos1[0] > pos0[0]) {
-        xInc = 1;
-        n += Math.floor(pos1[0]) - x;
-        error = (Math.floor(pos0[0]) + 1 - pos0[0]) * dy;
-    } else {
-        xInc = -1;
-        n += x - Math.floor(pos1[0]);
-        error = (pos0[0] - Math.floor(pos0[0])) * dy;
-    }
-
-    if (pos1[1] > pos0[1]) {
-        yInc = 1;
-        n += Math.floor(pos1[1]) - y;
-        error -= (Math.floor(pos0[1]) + 1 - pos0[1]) * dx;
-    } else {
-        yInc = -1;
-        n += y - Math.floor(pos1[1]);
-        error -= (pos0[1] - Math.floor(pos0[1])) * dx;
-    }
-
-    while (n > 0) {
-        if (x < 0 || y < 0 || x >= solid.sizeX || y >= solid.sizeY)
-            return false;
-
-        const isSolid = solid.get(x, y);
-        if (isSolid)
-            return false;
-
-        if (error > 0) {
-            y += yInc;
-            error -= dx;
-        } else {
-            x += xInc;
-            error += dy;
-        }
-
-        --n;
-    }
-
-    return true;
-}
-
-function fixupPositionAndVelocityAgainstDisc(position: vec2, velocity: vec2, radius: number, discPosition: vec2, discRadius: number): boolean {
-    const dpos = vec2.create();
-    vec2.subtract(dpos, position, discPosition);
-    const d = vec2.length(dpos);
-    const dist = d - (radius + discRadius);
-
-    if (dist >= 0) {
-        return false;
-    }
-
-    vec2.scaleAndAdd(position, position, dpos, -dist / d);
-
-    const vn = vec2.dot(velocity, dpos);
-    if (vn < 0) {
-        vec2.scaleAndAdd(velocity, velocity, dpos, -vn / (d*d));
-    }
-
-    return true;
-}
-
 function renderScene(renderer: Renderer, state: State) {
     const screenSize = vec2.create();
     renderer.beginFrame(screenSize);
@@ -2091,64 +1103,24 @@ function renderScene(renderer: Renderer, state: State) {
 
     state.renderColoredTriangles(matScreenFromWorld);
 
-    renderSpikesDead(state.level.spikes, renderer, matScreenFromWorld);
-    renderTurretsDead(state.level.turrets, renderer, matScreenFromWorld);
-    renderSwarmersDead(state.level.swarmers, renderer, matScreenFromWorld);
-
-    renderLootItems(state, renderer, matScreenFromWorld);
-    renderPotions(state, renderer, matScreenFromWorld);
-
-    renderSpikesAlive(state.level.spikes, renderer, matScreenFromWorld);
-    renderTurretsAlive(state, state.level.turrets, renderer, matScreenFromWorld);
-    renderSwarmersAlive(state.level.swarmers, renderer, matScreenFromWorld);
-
-    renderTurretBullets(state.turretBullets, renderer, matScreenFromWorld);
     renderPlayerBullets(state, renderer, matScreenFromWorld);
 
     renderPlayer(state, renderer, matScreenFromWorld);
-
-    // Status displays
-
-    renderHealthMeter(state, renderer, screenSize);
-    renderLootCounter(state, renderer, screenSize);
-    renderBulletAndPotionCounter(state, renderer, screenSize);
 
     // Text
 
     if (state.paused) {
         renderTextLines(renderer, screenSize, [
-            '          AMULET RAIDER',
+            'HAMILTONION HACKING',
             '',
-            '     Paused: Click to unpause',
-            '',
-            'Jacin said the amulet is cursed.',
-            'Having magic of my own, though,',
-            'I prefer to judge for myself.',
-            '',
-            '   Retrieve cursed amulet: \x0c',
+            'Paused: Click to unpause',
             '',
             'Move with mouse',
             'LMB shoots while moving',
             'RMB or Space drinks potion',
             '',
-            '<>: Mouse sensitivity: ' + state.mouseSensitivity,
             'Esc: Pause, R: Retry, M: Map',
-            '',
-            '     James McNeill - 2022 7DRL',
-            '   Special thanks: Mendi Carroll',
         ]);
-    } else if (state.gameState == GameState.Won && state.timeToGameEndMessage <= 0) {
-        renderTextLines(renderer, screenSize, [
-            'I HOLD THE AMULET AND I LIVE!',
-            '   Esc: Pause, R: Restart',
-        ]);
-    } else if (state.gameState == GameState.Died && state.timeToGameEndMessage <= 0) {
-        renderTextLines(renderer, screenSize, [
-            '   DEATH HAS COME',
-            'Esc: Pause, R: Retry',
-        ]);
-    } else if (state.pickupMessageTimer > 0) {
-        renderTextLines(renderer, screenSize, state.pickupMessage);
     }
 }
 
@@ -2187,146 +1159,6 @@ function setupViewMatrix(state: State, screenSize: vec2, matScreenFromWorld: mat
     const cyZoom = lerp(cyMap, cyGame, state.mapZoom);
 
     mat4.ortho(matScreenFromWorld, cxZoom - rxZoom, cxZoom + rxZoom, cyZoom - ryZoom, cyZoom + ryZoom, 1, -1);
-}
-
-function renderHealthMeter(state: State, renderer: Renderer, screenSize: vec2) {
-    const minCharsX = 40;
-    const minCharsY = 20;
-    const scaleLargestX = Math.max(1, Math.floor(screenSize[0] / (8 * minCharsX)));
-    const scaleLargestY = Math.max(1, Math.floor(screenSize[1] / (16 * minCharsY)));
-    const scaleFactor = Math.min(scaleLargestX, scaleLargestY);
-    const pixelsPerCharX = 8 * scaleFactor;
-    const pixelsPerCharY = 16 * scaleFactor;
-    const numCharsX = screenSize[0] / pixelsPerCharX;
-    const numCharsY = screenSize[1] / pixelsPerCharY;
-    const offsetX = -1;
-    const offsetY = 0;
-
-    const matScreenFromTextArea = mat4.create();
-    mat4.ortho(
-        matScreenFromTextArea,
-        offsetX,
-        offsetX + numCharsX,
-        offsetY,
-        offsetY + numCharsY,
-        1,
-        -1);
-    renderer.renderGlyphs.start(matScreenFromTextArea);
-
-    const glyphColorHeartFilled = 0xff0000aa;
-    const glyphColorHeartEmpty = 0xff202020;
-    const glyphColorHeartOvercharge = 0xff5555ff;
-
-    for (let i = 0; i < playerMaxHitPoints; ++i) {
-        renderer.renderGlyphs.addGlyph(
-            i, 0, i + 1, 1,
-            3,
-            i < state.player.hitPoints ? glyphColorHeartFilled : glyphColorHeartEmpty
-        );
-    }
-
-    for (let i = playerMaxHitPoints; i < state.player.hitPoints; ++i) {
-        renderer.renderGlyphs.addGlyph(
-            i, 0, i + 1, 1,
-            3,
-            glyphColorHeartOvercharge
-        );
-    }
-
-    renderer.renderGlyphs.flush();
-}
-
-function renderLootCounter(state: State, renderer: Renderer, screenSize: vec2) {
-    const numLootItemsTotal = state.level.numLootItemsTotal;
-    const numLootItemsCollected = numLootItemsTotal - state.level.lootItems.length;
-
-    const strMsg = numLootItemsCollected + '/' + numLootItemsTotal + '\x0f';
-    const cCh = strMsg.length;
-
-    const minCharsX = 40;
-    const minCharsY = 20;
-    const scaleLargestX = Math.max(1, Math.floor(screenSize[0] / (8 * minCharsX)));
-    const scaleLargestY = Math.max(1, Math.floor(screenSize[1] / (16 * minCharsY)));
-    const scaleFactor = Math.min(scaleLargestX, scaleLargestY);
-    const pixelsPerCharX = 8 * scaleFactor;
-    const pixelsPerCharY = 16 * scaleFactor;
-    const numCharsX = screenSize[0] / pixelsPerCharX;
-    const numCharsY = screenSize[1] / pixelsPerCharY;
-    const offsetX = (cCh + 1) - numCharsX;
-    const offsetY = 0;
-
-    const matScreenFromTextArea = mat4.create();
-    mat4.ortho(
-        matScreenFromTextArea,
-        offsetX,
-        offsetX + numCharsX,
-        offsetY,
-        offsetY + numCharsY,
-        1,
-        -1);
-    renderer.renderGlyphs.start(matScreenFromTextArea);
-
-    const color = 0xff55ffff;
-
-    for (let i = 0; i < cCh; ++i) {
-        const glyphIndex = strMsg.charCodeAt(i);
-        renderer.renderGlyphs.addGlyph(i, 0, i + 1, 1, glyphIndex, color);
-    }
-
-    renderer.renderGlyphs.flush();
-}
-
-function renderBulletAndPotionCounter(state: State, renderer: Renderer, screenSize: vec2) {
-    const strMsg = '     ' + state.player.numInvulnerabilityPotions + '\xad';
-    const cCh = strMsg.length;
-
-    const color = 0xffffff55;
-    const colorDim = 0xff202000;
-
-    const minCharsX = 40;
-    const minCharsY = 20;
-    const scaleLargestX = Math.max(1, Math.floor(screenSize[0] / (8 * minCharsX)));
-    const scaleLargestY = Math.max(1, Math.floor(screenSize[1] / (16 * minCharsY)));
-    const scaleFactor = Math.min(scaleLargestX, scaleLargestY);
-    const pixelsPerCharX = 8 * scaleFactor;
-    const pixelsPerCharY = 16 * scaleFactor;
-    const numCharsX = screenSize[0] / pixelsPerCharX;
-    const numCharsY = screenSize[1] / pixelsPerCharY;
-    const offsetX = -Math.floor((screenSize[0] - (cCh + bulletMaxCapacity) * pixelsPerCharX) / 2) / pixelsPerCharX;
-    const offsetY = 0;
-
-    const matScreenFromTextArea = mat4.create();
-    mat4.ortho(
-        matScreenFromTextArea,
-        offsetX,
-        offsetX + numCharsX,
-        offsetY,
-        offsetY + numCharsY,
-        1,
-        -1);
-    renderer.renderGlyphs.start(matScreenFromTextArea);
-
-    const numBullets = Math.floor(state.player.numBullets);
-
-    for (let i = 0; i < bulletMaxCapacity; ++i) {
-        const glyphIndex = 157;
-        renderer.renderGlyphs.addGlyph(
-            i, 0, i + 1, 1,
-            glyphIndex,
-            (i < numBullets) ? color : colorDim
-        );
-    }
-
-    for (let i = 0; i < cCh; ++i) {
-        const glyphIndex = strMsg.charCodeAt(i);
-        renderer.renderGlyphs.addGlyph(
-            i + bulletMaxCapacity, 0, i + bulletMaxCapacity + 1, 1,
-            glyphIndex,
-            color
-        );
-    }
-
-    renderer.renderGlyphs.flush();
 }
 
 function renderTextLines(renderer: Renderer, screenSize: vec2, lines: Array<string>) {
@@ -2433,31 +1265,6 @@ function loadShader(gl: WebGL2RenderingContext, type: number, source: string): W
     return shader;
 }
 
-function createStripeTexture(gl: WebGL2RenderingContext): WebGLTexture {
-    const stripeImageWidth = 64;
-    const stripeImage = new Uint8Array(stripeImageWidth);
-    for (let j = 0; j < stripeImageWidth; ++j) {
-        stripeImage[j] = 223 + j / 2;
-    }
-
-    const texture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-    const level = 0;
-    const internalFormat = gl.LUMINANCE;
-    const srcFormat = gl.LUMINANCE;
-    const srcType = gl.UNSIGNED_BYTE;
-    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, stripeImageWidth, 1, 0, srcFormat, srcType, stripeImage);
-    gl.generateMipmap(gl.TEXTURE_2D);
-
-    return texture;
-}
-
 type PriorityQueueElement = {
     priority: number;
 }
@@ -2500,190 +1307,6 @@ function priorityQueuePush<T extends PriorityQueueElement>(q: PriorityQueue<T>, 
         [q[i], q[iParent]] = [q[iParent], q[i]];
         i = iParent;
     }
-}
-
-function createDistanceField(solid: BooleanGrid, posSource: vec2): Float64Grid {
-    const fieldSizeX = solid.sizeX + 1;
-    const fieldSizeY = solid.sizeY + 1;
-    const distanceField = new Float64Grid(fieldSizeX, fieldSizeY, Infinity);
-    updateDistanceField(solid, distanceField, posSource);
-    return distanceField;
-}
-
-function updateDistanceField(solid: BooleanGrid, distanceField: Float64Grid, posSource: vec2) {
-    const sourceX = Math.floor(posSource[0]);
-    const sourceY = Math.floor(posSource[1]);
-
-    distanceField.fill(Infinity);
-
-    let toVisit = [{priority: 0, x: sourceX, y: sourceY}];
-
-    fastMarchFill(distanceField, toVisit, (x, y) => estimatedDistance(solid, distanceField, x, y));
-
-    floodFillImpassableAreas(distanceField);
-}
-
-type FastMarchVisit = {
-    priority: number;
-    x: number;
-    y: number;
-}
-
-type EstimatedDistance = (x: number, y: number) => number;
-
-function fastMarchFill(field: Float64Grid, toVisit: PriorityQueue<FastMarchVisit>, estimatedDistance: EstimatedDistance) {
-    while (toVisit.length > 0) {
-        const {priority, x, y} = priorityQueuePop(toVisit);
-
-        if (field.get(x, y) <= priority) {
-            continue;
-        }
-
-        field.set(x, y, priority);
-
-        if (x < field.sizeX - 1) {
-            const d = estimatedDistance(x + 1, y);
-            if (d < field.get(x+1, y)) {
-                priorityQueuePush(toVisit, {priority: d, x: x+1, y: y});
-            }
-        }
-
-        if (x > 0) {
-            const d = estimatedDistance(x - 1, y);
-            if (d < field.get(x-1, y)) {
-                priorityQueuePush(toVisit, {priority: d, x: x-1, y: y});
-            }
-        }
-
-        if (y < field.sizeY - 1) {
-            const d = estimatedDistance(x, y + 1);
-            if (d < field.get(x, y+1)) {
-                priorityQueuePush(toVisit, {priority: d, x: x, y: y+1});
-            }
-        }
-
-        if (y > 0) {
-            const d = estimatedDistance(x, y - 1);
-            if (d < field.get(x, y-1)) {
-                priorityQueuePush(toVisit, {priority: d, x: x, y: y-1});
-            }
-        }
-    }
-}
-
-function estimatedDistance(solid: BooleanGrid, distanceField: Float64Grid, x: number, y: number): number {
-    function isSolid(x: number, y: number) {
-        if (x < 0 || y < 0 || x >= solid.sizeX || y >= solid.sizeY)
-            return true;
-        return solid.get(x, y);
-    }
-
-    const solidSW = isSolid(x-1, y-1);
-    const solidSE = isSolid(x, y-1);
-    const solidNW = isSolid(x-1, y);
-    const solidNE = isSolid(x, y);
-
-    const dXNeg = (x > 0 && !(solidNW && solidSW)) ? distanceField.get(x-1, y) : Infinity;
-    const dXPos = (x < distanceField.sizeX - 1 && !(solidNE && solidSE)) ? distanceField.get(x+1, y) : Infinity;
-    const dYNeg = (y > 0 && !(solidSW && solidSE)) ? distanceField.get(x, y-1) : Infinity;
-    const dYPos = (y < distanceField.sizeY - 1 && !(solidNW && solidNE)) ? distanceField.get(x, y+1) : Infinity;
-
-    const dXMin = Math.min(dXNeg, dXPos);
-    const dYMin = Math.min(dYNeg, dYPos);
-
-    const timeHorizontal = 1.0;
-
-    const d = (Math.abs(dXMin - dYMin) <= timeHorizontal) ?
-        ((dXMin + dYMin) + Math.sqrt((dXMin + dYMin)**2 - 2 * (dXMin**2 + dYMin**2 - timeHorizontal**2))) / 2:
-        Math.min(dXMin, dYMin) + timeHorizontal;
-
-    return d;
-}
-
-function floodFillImpassableAreas(field: Float64Grid) {
-    const toVisit: PriorityQueue<FastMarchVisit> = [];
-
-    for (let y = 0; y < field.sizeY; ++y) {
-        for (let x = 0; x < field.sizeX; ++x) {
-            const d = field.get(x, y);
-            if (d === Infinity)
-                continue;
-
-            if (x < field.sizeX - 1) {
-                const d = estimatedDistanceSimple(field, x + 1, y);
-                if (d < field.get(x+1, y)) {
-                    priorityQueuePush(toVisit, {priority: d, x: x+1, y: y});
-                }
-            }
-
-            if (x > 0) {
-                const d = estimatedDistanceSimple(field, x - 1, y);
-                if (d < field.get(x-1, y)) {
-                    priorityQueuePush(toVisit, {priority: d, x: x-1, y: y});
-                }
-            }
-
-            if (y < field.sizeY - 1) {
-                const d = estimatedDistanceSimple(field, x, y + 1);
-                if (d < field.get(x, y+1)) {
-                    priorityQueuePush(toVisit, {priority: d, x: x, y: y+1});
-                }
-            }
-
-            if (y > 0) {
-                const d = estimatedDistanceSimple(field, x, y - 1);
-                if (d < field.get(x, y-1)) {
-                    priorityQueuePush(toVisit, {priority: d, x: x, y: y-1});
-                }
-            }
-        }
-    }
-
-    fastMarchFill(field, toVisit, (x, y) => estimatedDistanceSimple(field, x, y));
-}
-
-function estimatedDistanceSimple(distanceField: Float64Grid, x: number, y: number): number {
-    // Only fill unfilled squares
-    if (distanceField.get(x, y) !== Infinity)
-        return Infinity;
-
-    const dXNeg = (x > 0) ? distanceField.get(x-1, y) : Infinity;
-    const dXPos = (x < distanceField.sizeX - 1) ? distanceField.get(x+1, y) : Infinity;
-    const dYNeg = (y > 0) ? distanceField.get(x, y-1) : Infinity;
-    const dYPos = (y < distanceField.sizeY - 1) ? distanceField.get(x, y+1) : Infinity;
-
-    const dXMin = Math.min(dXNeg, dXPos);
-    const dYMin = Math.min(dYNeg, dYPos);
-
-    const timeHorizontal = 1.0;
-
-    const d = (Math.abs(dXMin - dYMin) <= timeHorizontal) ?
-        ((dXMin + dYMin) + Math.sqrt((dXMin + dYMin)**2 - 2 * (dXMin**2 + dYMin**2 - timeHorizontal**2))) / 2:
-        Math.min(dXMin, dYMin) + timeHorizontal;
-
-    return d;
-}
-
-function estimateDistance(distanceField: Float64Grid, position: vec2): number {
-    const x = position[0];
-    const y = position[1];
-
-    const gridX = Math.max(0, Math.min(distanceField.sizeX - 1, Math.floor(x)));
-    const gridY = Math.max(0, Math.min(distanceField.sizeY - 1, Math.floor(y)));
-
-    const uX = x - gridX;
-    const uY = y - gridY;
-
-    const d00 = distanceField.get(gridX, gridY);
-    const d10 = distanceField.get(gridX + 1, gridY);
-    const d01 = distanceField.get(gridX, gridY + 1);
-    const d11 = distanceField.get(gridX + 1, gridY + 1);
-
-    const d0 = d00 + (d10 - d00) * uX;
-    const d1 = d01 + (d11 - d01) * uX;
-    const d = d0 + (d1 - d0) * uY;
-
-    return d;
 }
 
 function randomInRange(n: number): number {
@@ -2917,12 +1540,6 @@ function createLevel(): Level {
         }
     }
 
-    // Decorate the rooms
-
-    const roomsToDecorate = rooms.filter((room, roomIndex) => roomIndex != roomIndexEntrance && roomIndex != roomIndexExit);
-    decorateRooms(roomsToDecorate, grid);
-    tryCreatePillarRoom(rooms[roomIndexExit], grid);
-
     // Plot corridors into grid
 
     for (let roomY = 0; roomY < numCellsY; ++roomY) {
@@ -3109,34 +1726,11 @@ function createLevel(): Level {
         }
     }
 
-    // Enemies
-
-    const [spikes, turrets, swarmers] = createEnemies(rooms, roomDistanceFromEntrance, solid, positionsUsed);
-
-    // Potions
-
-    const potions = createPotions(rooms, roomIndexEntrance, roomIndexExit, solid, positionsUsed);
-
-    // Place loot in the level. Distribute it so rooms that are far from
-    // the entrance or the exit have the most? Or so dead ends have the
-    // most? Bias toward the rooms that aren't on the path between the
-    // entrance and the exit?
-
-    const lootItems = createLootItems(rooms, positionsUsed, roomIndexEntrance, amuletPos, solid);
-
     return {
         solid: solid,
         vertexData: vertexData,
         playerStartPos: playerStartPos,
         startRoom: startRoom,
-        amuletRoom: amuletRoom,
-        amuletPos: amuletPos,
-        spikes: spikes,
-        turrets: turrets,
-        swarmers: swarmers,
-        potions: potions,
-        lootItems: lootItems,
-        numLootItemsTotal: lootItems.length,
     };
 }
 
@@ -3167,183 +1761,6 @@ function computeDistances(roomDistance: Array<number>, numRooms: number, edges: 
             }
         }
     }
-}
-
-function createEnemies(
-    rooms: Array<Rect>,
-    roomDistance: Array<number>,
-    solid: BooleanGrid,
-    positionsUsed: Array<vec2>): [Array<Spike>, Array<Turret>, Array<Swarmer>] {
-    const spikes: Array<Spike> = [];
-    const turrets: Array<Turret> = [];
-    const swarmers: Array<Swarmer> = [];
-
-    const dMax = roomDistance.reduce((d0, d1) => Math.max(d0, d1), 0);
-
-    for (let roomIndex = 0; roomIndex < roomDistance.length; ++roomIndex) {
-        const d = roomDistance[roomIndex];
-        if (d === 0)
-            continue;
-
-        const room = rooms[roomIndex];
-
-        const depthDensity = lerp(0.005, 0.035, d / dMax);
-        const maxEnemies = Math.ceil(room.sizeX * room.sizeY * depthDensity);
-        let numEnemies = 0;
-        for (let i = 0; i < 1024 && numEnemies < maxEnemies; ++i) {
-            // Pick a kind of monster to create.
-            const monsterKind = Math.random();
-
-            let success = false;
-            if (monsterKind < 0.3 || d < 2) {
-                success = tryCreateSpike(room, spikes, solid, positionsUsed);
-            } else if ((monsterKind < 0.7 || d < 3) && d != 3) {
-                success = tryCreateTurret(room, turrets, solid, positionsUsed);
-            } else {
-                success = tryCreateSwarmer(room, swarmers, solid, positionsUsed);
-            }
-    
-            if (success) {
-                ++numEnemies;
-            }
-        }
-    }
-
-    return [spikes, turrets, swarmers];
-}
-
-function tryCreateSpike(room: Rect, spikes: Array<Spike>, solid: BooleanGrid, positionsUsed: Array<vec2>): boolean {
-    const x = Math.random() * (room.sizeX - 2 * monsterRadius) + room.minX + monsterRadius;
-    const y = Math.random() * (room.sizeY - 2 * monsterRadius) + room.minY + monsterRadius;
-
-    const position = vec2.fromValues(x, y);
-
-    if (isDiscTouchingLevel(position, monsterRadius * 2, solid)) {
-        return false;
-    }
-
-    if (isPositionTooCloseToOtherPositions(positionsUsed, 4 * monsterRadius, position)) {
-        return false;
-    }
-
-    spikes.push({
-        position: position,
-        velocity: vec2.fromValues(0, 0),
-        radius: monsterRadius,
-        onContactCooldown: false,
-        dead: false,
-    });
-
-    positionsUsed.push(position);
-
-    return true;
-}
-
-function tryCreateTurret(room: Rect, turrets: Array<Turret>, solid: BooleanGrid, positionsUsed: Array<vec2>): boolean {
-    const x = Math.random() * (room.sizeX - 2 * monsterRadius) + room.minX + monsterRadius;
-    const y = Math.random() * (room.sizeY - 2 * monsterRadius) + room.minY + monsterRadius;
-
-    const position = vec2.fromValues(x, y);
-
-    if (isDiscTouchingLevel(position, monsterRadius * 2, solid)) {
-        return false;
-    }
-
-    if (isPositionTooCloseToOtherPositions(positionsUsed, 4 * monsterRadius, position)) {
-        return false;
-    }
-
-    turrets.push({
-        position: position,
-        velocity: vec2.fromValues(0, 0),
-        radius: monsterRadius,
-        onContactCooldown: false,
-        dead: false,
-        timeToFire: Math.random() * turretFireDelayStart,
-    });
-
-    positionsUsed.push(position);
-
-    return true;
-}
-
-function tryCreateSwarmer(room: Rect, swarmers: Array<Swarmer>, solid: BooleanGrid, positionsUsed: Array<vec2>): boolean {
-    const x = Math.random() * (room.sizeX - 2 * monsterRadius) + room.minX + monsterRadius;
-    const y = Math.random() * (room.sizeY - 2 * monsterRadius) + room.minY + monsterRadius;
-
-    const position = vec2.fromValues(x, y);
-
-    if (isDiscTouchingLevel(position, monsterRadius * 2, solid)) {
-        return false;
-    }
-
-    if (isPositionTooCloseToOtherPositions(positionsUsed, 4 * monsterRadius, position)) {
-        return false;
-    }
-
-    swarmers.push({
-        position: position,
-        velocity: vec2.fromValues(0, 0),
-        radius: monsterRadius,
-        heading: Math.random(),
-        headingRate: (Math.random() * 0.15 + 0.15) * (randomInRange(2) * 2 - 1),
-        onContactCooldown: false,
-        dead: false,
-    });
-
-    positionsUsed.push(position);
-
-    return true;
-}
-
-function createPotions(
-    rooms: Array<Rect>,
-    roomIndexEntrance: number,
-    roomIndexExit: number,
-    solid: BooleanGrid,
-    positionsUsed: Array<vec2>): Array<Potion> {
-    const roomIndices = [];
-    for (let i = 0; i < rooms.length; ++i) {
-        if (i != roomIndexEntrance && i != roomIndexExit) {
-            roomIndices.push(i);
-        }
-    }
-
-    shuffleArray(roomIndices);
-    roomIndices.length = Math.ceil(roomIndices.length * 0.667);
-
-    const numHealthPotions = Math.ceil(roomIndices.length * 0.667);
-
-    const potions = [];
-
-    for (let i = 0; i < roomIndices.length; ++i) {
-        const room = rooms[roomIndices[i]];
-
-        for (let j = 0; j < 1024; ++j) {
-            const x = Math.random() * (room.sizeX - 2 * lootRadius) + room.minX + lootRadius;
-            const y = Math.random() * (room.sizeY - 2 * lootRadius) + room.minY + lootRadius;
-
-            const position = vec2.fromValues(x, y);
-
-            if (isDiscTouchingLevel(position, lootRadius * 2, solid)) {
-                continue;
-            }
-
-            if (isPositionTooCloseToOtherPositions(positionsUsed, 3 * lootRadius, position)) {
-                continue;
-            }
-
-            potions.push({
-                position: position,
-                potionType: (i < numHealthPotions) ? PotionType.Health : PotionType.Invulnerability,
-            });
-
-            positionsUsed.push(position);
-            break;
-        }
-    }
-
-    return potions;
 }
 
 function compressRooms(roomGrid: Array<Array<number>>, edges: Array<[number, number]>, rooms: Array<Rect>): [number, number] {
@@ -3436,209 +1853,6 @@ function compressRooms(roomGrid: Array<Array<number>>, edges: Array<[number, num
     return [mapSizeX, mapSizeY];
 }
 
-function decorateRooms(rooms: Array<Rect>, grid: TerrainTypeGrid) {
-    const roomsShuffled = [...rooms];
-    shuffleArray(roomsShuffled);
-
-    tryPlacePillarRoom(roomsShuffled, grid);
-    tryPlaceCenterObstacleRoom(roomsShuffled, grid);
-    tryPlacePillarRoom(roomsShuffled, grid);
-    tryPlaceCenterObstacleRoom(roomsShuffled, grid);
-    tryPlacePillarRoom(roomsShuffled, grid);
-}
-
-function tryPlacePillarRoom(rooms: Array<Rect>, grid: TerrainTypeGrid) {
-    for (let i = 0; i < rooms.length; ++i) {
-        const room = rooms[i];
-
-        if (tryCreatePillarRoom(room, grid)) {
-            rooms[i] = rooms[rooms.length-1];
-            --rooms.length;
-            break;    
-        }
-    }
-}
-
-function tryCreatePillarRoom(room: Rect, grid: TerrainTypeGrid): boolean {
-    if (room.sizeX < 13 || room.sizeY < 13)
-        return false;
-    if (((room.sizeX - 3) % 5) != 0 && ((room.sizeY - 3) % 5) != 0)
-        return false;
-
-    function plotPillar(x: number, y: number) {
-        if (Math.random() < 0.125)
-            return;
-        x += room.minX;
-        y += room.minY;
-        grid.set(x, y, TerrainType.Wall);
-        grid.set(x+1, y, TerrainType.Wall);
-        grid.set(x, y+1, TerrainType.Wall);
-        grid.set(x+1, y+1, TerrainType.Wall);
-    }
-
-    plotPillar(3, 3);
-    plotPillar(3, room.sizeY - 5);
-    plotPillar(room.sizeX - 5, 3);
-    plotPillar(room.sizeX - 5, room.sizeY - 5);
-
-    if (((room.sizeX - 3) % 5) == 0) {
-        for (let x = 8; x < room.sizeX - 5; x += 5) {
-            plotPillar(x, 3);
-            plotPillar(x, room.sizeY - 5);
-        }
-    }
-
-    if (((room.sizeY - 3) % 5) == 0) {
-        for (let y = 8; y < room.sizeY - 5; y += 5) {
-            plotPillar(3, y);
-            plotPillar(room.sizeX - 5, y);
-        }
-    }
-
-    return true;
-}
-
-function tryPlaceCenterObstacleRoom(rooms: Array<Rect>, grid: TerrainTypeGrid) {
-    for (let i = 0; i < rooms.length; ++i) {
-        const room = rooms[i];
-        if (room.sizeX < 15 || room.sizeY < 15)
-            continue;
-
-        rooms[i] = rooms[rooms.length-1];
-        --rooms.length;
-
-        function plotRect(minX: number, minY: number, sizeX: number, sizeY: number, type: number) {
-            for (let x = minX; x < minX + sizeX; ++x) {
-                for (let y = minY; y < minY + sizeY; ++y) {
-                    grid.set(x, y, type);
-                }
-            }
-        }
-
-        plotRect(room.minX + 6, room.minY + 6, room.sizeX - 12, room.sizeY - 12, TerrainType.Wall);
-        plotRect(room.minX + 7, room.minY + 7, room.sizeX - 14, room.sizeY - 14, TerrainType.Solid);
-
-        return;
-    }
-}
-
-function createLootItems(
-    rooms: Array<Rect>,
-    positionsUsed: Array<vec2>,
-    roomIndexEntrance: number,
-    posAmulet: vec2,
-    solid: BooleanGrid): Array<LootItem> {
-    const numLoot = 100;
-    const loot = [];
-
-    for (let i = 0; i < 1024 && loot.length < numLoot; ++i) {
-        const roomIndex = randomInRange(rooms.length);
-        if (roomIndex == roomIndexEntrance) {
-            continue;
-        }
-
-        const room = rooms[roomIndex];
-
-        const x = Math.random() * (room.sizeX - 2 * lootRadius) + room.minX + lootRadius;
-        const y = Math.random() * (room.sizeY - 2 * lootRadius) + room.minY + lootRadius;
-
-        const position = vec2.fromValues(x, y);
-
-        if (isDiscTouchingLevel(position, lootRadius * 2, solid)) {
-            continue;
-        }
-
-        if (isPositionTooCloseToOtherPositions(positionsUsed, 2 * lootRadius + monsterRadius, position)) {
-            continue;
-        }
-
-        const dposAmulet = vec2.create();
-        vec2.subtract(dposAmulet, posAmulet, position);
-        if (vec2.length(dposAmulet) < 12 * lootRadius)
-            continue;
-
-        positionsUsed.push(position);
-        loot.push({position: position});
-    }
-
-    return loot;
-}
-
-function renderLootItems(state: State, renderer: Renderer, matScreenFromWorld: mat4) {
-    const discs = state.level.lootItems.map(lootItem => ({
-        position: lootItem.position,
-        radius: lootRadius,
-        discColor: 0xff737373,
-        glyphColor: 0xff37ffff,
-        glyphIndex: 15,
-    }));
-
-    if (!state.player.amuletCollected) {
-        discs.push({
-            position: state.level.amuletPos,
-            radius: lootRadius,
-            discColor: 0xff262666,
-            glyphColor: 0xff3737ff,
-            glyphIndex: 12,
-        });
-    }
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function updateLootItems(state: State) {
-    if (state.player.hitPoints <= 0)
-        return;
-
-    const dpos = vec2.create();
-
-    filterInPlace(state.level.lootItems, lootItem => {
-        vec2.subtract(dpos, lootItem.position, state.player.position);
-        return (vec2.length(dpos) > playerRadius + lootRadius);
-    });
-}
-
-function renderPotions(state: State, renderer: Renderer, matScreenFromWorld: mat4) {
-    const potionHealthGlyphColor = 0xff5555ff;
-    const potionInvulnerabilityGlyphColor = 0xffffff55;
-
-    const discs = state.level.potions.map(potion => ({
-        position: potion.position,
-        radius: lootRadius,
-        discColor: 0xff737373,
-        glyphColor: (potion.potionType == PotionType.Health) ? potionHealthGlyphColor : potionInvulnerabilityGlyphColor,
-        glyphIndex: 173,
-    }));
-
-    renderer.renderDiscs(matScreenFromWorld, discs);
-}
-
-function updatePotions(state: State) {
-    if (state.player.hitPoints <= 0)
-        return;
-
-    const dpos = vec2.create();
-
-    filterInPlace(state.level.potions, potion => {
-        vec2.subtract(dpos, potion.position, state.player.position);
-        if (vec2.length(dpos) > playerRadius + lootRadius)
-            return true;
-        if (potion.potionType == PotionType.Health) {
-            if (state.player.hitPoints >= playerMaxHitPoints) {
-                state.player.hitPoints += 1;
-                setPickupMessage(state, ['Extra Health!']);
-            } else {
-                state.player.hitPoints = playerMaxHitPoints;
-                setPickupMessage(state, ['Healing Potion']);
-            }
-        } else if (potion.potionType == PotionType.Invulnerability) {
-            state.player.numInvulnerabilityPotions += 1;
-            setPickupMessage(state, ['+1 Invulnerability Potion']);
-        }
-        return false;
-    });
-}
-
 function hasEdge(edges: Array<[number, number]>, roomIndex0: number | null, roomIndex1: number | null): boolean {
     return edges.some(edge => edge[0] === roomIndex0 && edge[1] === roomIndex1);
 }
@@ -3655,18 +1869,6 @@ function canHaveStraightHorizontalHall(room0: Rect, room1: Rect): boolean {
     const overlapMax = Math.min(room0.minY + room0.sizeY, room1.minY + room1.sizeY) - 1;
     const overlapSize = Math.max(0, overlapMax - overlapMin);
     return overlapSize >= corridorWidth;
-}
-
-function isPositionTooCloseToOtherPositions(positions: Array<vec2>, separationDistance: number, position: vec2): boolean {
-    const dpos = vec2.create();
-    for (const positionOther of positions) {
-        vec2.subtract(dpos, position, positionOther);
-        const d = vec2.length(dpos);
-        if (d < separationDistance) {
-            return true;
-        }
-    }
-    return false;
 }
 
 function shuffleArray<T>(array: Array<T>) {
