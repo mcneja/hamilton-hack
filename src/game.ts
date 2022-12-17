@@ -71,6 +71,21 @@ class TerrainTypeGrid {
     }
 }
 
+type Coord = [number, number];
+
+type Node = {
+    coord: Coord;
+    next: number;
+    group: number;
+}
+
+type Graph = {
+    node: Array<Node>;
+    extents: Coord;
+    start: number;
+    goal: number;
+}
+
 type Rect = {
     minX: number;
     minY: number;
@@ -95,12 +110,6 @@ type Camera = {
     velocity: vec2;
     joltOffset: vec2;
     joltVelocity: vec2;
-}
-
-type Disc = {
-    position: vec2;
-    velocity: vec2;
-    radius: number;
 }
 
 type GlyphDisc = {
@@ -130,7 +139,7 @@ type RenderGlyphs = {
     flush: () => void;
 }
 
-type BeginFrame = (screenSize: vec2) => void;
+type BeginFrame = () => vec2;
 type RenderColoredTriangles = (matScreenFromWorld: mat4) => void;
 type RenderDiscs = (matScreenFromWorld: mat4, discs: Array<GlyphDisc>) => void;
 
@@ -152,6 +161,7 @@ type State = {
     mapZoom: number;
     mapZoomVelocity: number;
     mouseSensitivity: number;
+    graph: Graph;
     player: Player;
     playerBullets: Array<Bullet>;
     camera: Camera;
@@ -401,6 +411,7 @@ function initState(
         mapZoom: 1,
         mapZoomVelocity: 0,
         mouseSensitivity: 0,
+        graph: createGraph(8, 8),
         player: createPlayer(level.playerStartPos),
         playerBullets: [],
         camera: createCamera(level.playerStartPos),
@@ -415,6 +426,7 @@ function resetState(
     const level = createLevel();
 
     state.renderColoredTriangles = createColoredTrianglesRenderer(level.vertexData);
+    state.graph = createGraph(8, 8);
     state.player = createPlayer(level.playerStartPos);
     state.playerBullets = [];
     state.camera = createCamera(level.playerStartPos);
@@ -422,7 +434,7 @@ function resetState(
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
-    return (screenSize) => {
+    return () => {
         const canvas = gl.canvas as HTMLCanvasElement;
 
         resizeCanvasToDisplaySize(canvas);
@@ -433,7 +445,7 @@ function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
         gl.viewport(0, 0, screenX, screenY);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        vec2.set(screenSize, screenX, screenY);
+        return vec2.fromValues(screenX, screenY);
     }
 }
 
@@ -605,7 +617,7 @@ function createDiscVertexBuffer(gl: WebGL2RenderingContext) {
     return vertexBuffer;
 }
 
-function createRectsRenderer(gl: WebGL2RenderingContext) {
+function createRectsRenderer(gl: WebGL2RenderingContext): RenderRects {
     const vsSource = `#version 300 es
         in vec2 vPosition;
         in vec4 vColor;
@@ -1095,8 +1107,7 @@ function isDiscTouchingLevel(discPos: vec2, discRadius: number, solid: BooleanGr
 }
 
 function renderScene(renderer: Renderer, state: State) {
-    const screenSize = vec2.create();
-    renderer.beginFrame(screenSize);
+    const screenSize = renderer.beginFrame();
 
     const matScreenFromWorld = mat4.create();
     setupViewMatrix(state, screenSize, matScreenFromWorld);
@@ -1106,6 +1117,11 @@ function renderScene(renderer: Renderer, state: State) {
     renderPlayerBullets(state, renderer, matScreenFromWorld);
 
     renderPlayer(state, renderer, matScreenFromWorld);
+
+    setupGraphViewMatrix(state.graph, screenSize, matScreenFromWorld);
+    renderer.renderRects.start(matScreenFromWorld);
+    drawGraph(state.graph, renderer.renderRects);
+    renderer.renderRects.flush();
 
     // Text
 
@@ -1159,6 +1175,26 @@ function setupViewMatrix(state: State, screenSize: vec2, matScreenFromWorld: mat
     const cyZoom = lerp(cyMap, cyGame, state.mapZoom);
 
     mat4.ortho(matScreenFromWorld, cxZoom - rxZoom, cxZoom + rxZoom, cyZoom - ryZoom, cyZoom + ryZoom, 1, -1);
+}
+
+function setupGraphViewMatrix(graph: Graph, screenSize: vec2, matScreenFromWorld: mat4) {
+    const mapSizeX = graph.extents[0];
+    const mapSizeY = graph.extents[1];
+
+    let rxMap: number, ryMap: number;
+    if (screenSize[0] * mapSizeY < screenSize[1] * mapSizeX) {
+        // horizontal is limiting dimension
+        rxMap = mapSizeX / 2;
+        ryMap = rxMap * screenSize[1] / screenSize[0];
+    } else {
+        // vertical is limiting dimension
+        ryMap = mapSizeY / 2;
+        rxMap = ryMap * screenSize[0] / screenSize[1];
+    }
+    const cxMap = (graph.extents[0] - 1) / 2;
+    const cyMap = (graph.extents[1] - 1) / 2;
+
+    mat4.ortho(matScreenFromWorld, cxMap - rxMap, cxMap + rxMap, cyMap - ryMap, cyMap + ryMap, 1, -1);
 }
 
 function renderTextLines(renderer: Renderer, screenSize: vec2, lines: Array<string>) {
@@ -1449,7 +1485,7 @@ function createLevel(): Level {
             continue;
         }
 
-        const edgesToAdd = potentialEdges.filter(edge => edge[0] == roomIndex || edge[1] == roomIndex);
+        const edgesToAdd = potentialEdges.filter(edge => edge[0] === roomIndex || edge[1] === roomIndex);
 
         filterInPlace(edgesToAdd, edge => {
             const e0 = edge[0];
@@ -1877,5 +1913,278 @@ function shuffleArray<T>(array: Array<T>) {
         let temp = array[i];
         array[i] = array[j];
         array[j] = temp;
+    }
+}
+
+const invalidIndex = -1;
+
+function drawGraph(graph: Graph, renderRects: RenderRects) {
+    const r = 0.2;
+
+    for (let i = 0; i < graph.node.length; ++i) {
+        const node = graph.node[i];
+
+        if (node.next == invalidIndex && i != graph.goal)
+            continue;
+
+        const color = (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
+
+        const x0 = node.coord[0] - r;
+        const x1 = node.coord[0] + r;
+        const y0 = node.coord[1] - r;
+        const y1 = node.coord[1] + r;
+
+        renderRects.addRect(x0, y0, x1, y1, color);
+    }
+
+    for (let i0 = 0; i0 < graph.node.length; ++i0) {
+        const node0 = graph.node[i0];
+
+        const i1 = node0.next;
+        if (i1 === invalidIndex)
+            continue;
+
+        const node1 = graph.node[i1];
+
+        const color = (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
+
+        let x0 = Math.min(node0.coord[0], node1.coord[0]);
+        let x1 = Math.max(node0.coord[0], node1.coord[0]);
+        let y0 = Math.min(node0.coord[1], node1.coord[1]);
+        let y1 = Math.max(node0.coord[1], node1.coord[1]);
+
+        if (node0.coord[0] === node1.coord[0]) {
+            x0 -= r;
+            x1 += r;
+            y0 += r;
+            y1 -= r;
+        } else {
+            x0 += r;
+            x1 -= r;
+            y0 -= r;
+            y1 += r;
+        }
+
+        renderRects.addRect(x0, y0, x1, y1, color);
+    }
+}
+
+function graphNodeIndexFromCoord(graph: Graph, coord: Coord): number {
+    if (coord[0] < 0 || coord[1] < 0)
+        return invalidIndex;
+
+    if (coord[0] >= graph.extents[0] || coord[1] >= graph.extents[1])
+        return invalidIndex;
+
+    return coord[0] * graph.extents[1] + coord[1];
+}
+
+function createGraph(sizeX: number, sizeY: number): Graph {
+    let graph: Graph = {
+        node: [],
+        extents: [sizeX, sizeY],
+        start: 0,
+        goal: 0
+    };
+
+    // Build a grid, for now, and a path in it.
+
+    for (let x = 0; x < sizeX; ++x) {
+        for (let y = 0; y < sizeY; ++y) {
+            const node: Node = {
+                coord: [x, y],
+                next: invalidIndex,
+                group: 0,
+            };
+            graph.node.push(node);
+        }
+    }
+
+    generateZigZagPath(graph);
+
+    computeGroups(graph);
+    shuffle(graph);
+
+    return graph;
+}
+
+function generateZigZagPath(graph: Graph) {
+    for (const node of graph.node) {
+        const x = node.coord[0];
+        const y = node.coord[1];
+
+        if ((y & 1) === 0) {
+            if (x < graph.extents[0] - 1) {
+                node.next = (x + 1) * graph.extents[1] + y;
+            } else if (y < graph.extents[1] - 1) {
+                node.next = x * graph.extents[1] + (y + 1);
+            } else {
+                node.next = invalidIndex;
+            }
+        } else {
+            if (x > 0) {
+                node.next = (x - 1) * graph.extents[1] + y;
+            } else if (y < graph.extents[1] - 1) {
+                node.next = x * graph.extents[1] + (y + 1);
+            } else {
+                node.next = invalidIndex;
+            }
+        }
+    }
+
+    if ((graph.extents[1] & 1) === 0) {
+        graph.goal = graph.extents[1] - 1;
+    } else {
+        graph.goal = graph.extents[0] * graph.extents[1] - 1;
+    }
+}
+
+function shuffle(graph: Graph) {
+    const numShuffles = 4 * (graph.extents[0] - 1) * (graph.extents[1] - 1);
+    for (let n = numShuffles; n > 0; --n) {
+        const x = randomInRange(graph.extents[0] - 1);
+        const y = randomInRange(graph.extents[1] - 1);
+
+        tryRotate(graph, [x, y]);
+    }
+}
+
+function tryRotate(graph: Graph, coord: Coord): boolean {
+    // Need to be in a square that has edges on opposite sides
+
+    let i00 = graphNodeIndexFromCoord(graph, coord);
+    let i10 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1]]);
+    let i01 = graphNodeIndexFromCoord(graph, [coord[0], coord[1] + 1]);
+    let i11 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1] + 1]);
+
+    if (i00 === undefined || i10 === undefined || i01 === undefined || i11 === undefined)
+        return false;
+
+    // Reorient to cut down on the number of distinct cases to consider.
+    // We are aiming to have an edge from (0, 0) to (1, 0),
+    // if possible on the main path and not a loop.
+
+    if (graph.node[i00].next === i01 || graph.node[i01].next === i00) {
+        [i10, i01] = [i01, i10];
+    }
+
+    if (graph.node[i01].group === 0) {
+        [i00, i01] = [i01, i00];
+        [i10, i11] = [i11, i10];
+    }
+
+    if (graph.node[i10].next === i00) {
+        [i00, i10] = [i10, i00];
+        [i01, i11] = [i11, i01];
+    }
+
+    let node00 = graph.node[i00];
+    let node10 = graph.node[i10];
+    let node01 = graph.node[i01];
+    let node11 = graph.node[i11];
+
+    // Have to have two parallel edges: one from (0, 0) to (1, 0),
+    // and another either from (0, 1) to (1, 1) or from (1, 1) to (0, 1).
+
+    if (node00.next !== i10)
+        return false;
+
+    if (node01.next !== i11 && node11.next !== i01)
+        return false;
+
+    if (node01.next === i00)
+        return false;
+
+    if (node10.next === i11)
+        return false;
+
+    if (node11.next === i10)
+        return false;
+
+    if (node11.next === i01) {
+        // Simple: the two edges are going in opposite directions
+
+        node00.next = i01;
+        node11.next = i10;
+        computeGroups(graph);
+    } else {
+        // Complex: the two edges are going the same direction, so something has to be reversed
+
+        if (node01.group != 0) {
+            reverse(graph, i11, i01);
+            node00.next = i01;
+            node11.next = i10;
+            computeGroups(graph);
+        } else if (before(graph, i10, i01)) {
+            reverse(graph, i10, i01);
+            node00.next = i01;
+            node10.next = i11;
+            computeGroups(graph);
+        } else {
+            reverse(graph, i11, i00);
+            node01.next = i00;
+            node11.next = i10;
+            computeGroups(graph);
+        }
+    }
+
+    return true;
+}
+
+function computeGroups(graph: Graph) {
+    // Initialize all nodes to no group
+
+    for (const node of graph.node) {
+        node.group = invalidIndex;
+    }
+
+    // Trace the Hamiltonian path and put all of its nodes in group 0
+
+    let group = 0;
+
+    for (let i = graph.start; i !== invalidIndex && graph.node[i].group === invalidIndex; i = graph.node[i].next) {
+        graph.node[i].group = group;
+    }
+
+    ++group;
+
+    // Put any nodes that weren't reached into additional groups
+
+    for (let i = 0; i < graph.node.length; ++i) {
+        for (let j = i; j !== invalidIndex && graph.node[j].group === invalidIndex; j = graph.node[j].next) {
+            graph.node[j].group = group;
+        }
+
+        ++group;
+    }
+}
+
+function before(graph: Graph, i0: number, i1: number): boolean {
+    if (i0 === invalidIndex)
+        return false;
+
+    for (let i = graph.node[i0].next; i !== i0 && i !== invalidIndex; i = graph.node[i].next) {
+        if (i === i1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function reverse(graph: Graph, i0: number, i1: number) {
+    let i = i0;
+    let iPrev = invalidIndex;
+
+    for (;;)
+    {
+        const iNext = graph.node[i].next;
+        graph.node[i].next = iPrev;
+
+        if (i === i1)
+            break;
+
+        iPrev = i;
+        i = iNext;
     }
 }
