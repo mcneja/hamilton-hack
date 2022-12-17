@@ -16,6 +16,8 @@ const bulletMinSpeed = 4;
 const numCellsX = 4;
 const numCellsY = 4;
 const corridorWidth = 3;
+const graphSizeX = 9;
+const graphSizeY = 9;
 class BooleanGrid {
     constructor(sizeX, sizeY, initialValue) {
         this.sizeX = sizeX;
@@ -250,7 +252,7 @@ function initState(createColoredTrianglesRenderer) {
         mapZoom: 1,
         mapZoomVelocity: 0,
         mouseSensitivity: 0,
-        graph: createGraph(8, 8),
+        graph: createGraph(graphSizeX, graphSizeY),
         player: createPlayer(level.playerStartPos),
         playerBullets: [],
         camera: createCamera(level.playerStartPos),
@@ -260,7 +262,7 @@ function initState(createColoredTrianglesRenderer) {
 function resetState(state, createColoredTrianglesRenderer) {
     const level = createLevel();
     state.renderColoredTriangles = createColoredTrianglesRenderer(level.vertexData);
-    state.graph = createGraph(8, 8);
+    state.graph = createGraph(graphSizeX, graphSizeY);
     state.player = createPlayer(level.playerStartPos);
     state.playerBullets = [];
     state.camera = createCamera(level.playerStartPos);
@@ -803,15 +805,16 @@ function isDiscTouchingLevel(discPos, discRadius, solid) {
 function renderScene(renderer, state) {
     const screenSize = renderer.beginFrame();
     const matScreenFromWorld = mat4.create();
-    setupViewMatrix(state, screenSize, matScreenFromWorld);
-    state.renderColoredTriangles(matScreenFromWorld);
-    renderPlayerBullets(state, renderer, matScreenFromWorld);
-    renderPlayer(state, renderer, matScreenFromWorld);
+    //    setupViewMatrix(state, screenSize, matScreenFromWorld);
+    //    state.renderColoredTriangles(matScreenFromWorld);
+    //    renderPlayerBullets(state, renderer, matScreenFromWorld);
+    //    renderPlayer(state, renderer, matScreenFromWorld);
     setupGraphViewMatrix(state.graph, screenSize, matScreenFromWorld);
     renderer.renderRects.start(matScreenFromWorld);
     drawGraph(state.graph, renderer.renderRects);
     renderer.renderRects.flush();
     // Text
+    /*
     if (state.paused) {
         renderTextLines(renderer, screenSize, [
             'HAMILTONION HACKING',
@@ -825,6 +828,7 @@ function renderScene(renderer, state) {
             'Esc: Pause, R: Retry, M: Map',
         ]);
     }
+    */
 }
 function setupViewMatrix(state, screenSize, matScreenFromWorld) {
     const mapSizeX = state.level.solid.sizeX + 2;
@@ -1456,7 +1460,7 @@ function drawGraph(graph, renderRects) {
         const node = graph.node[i];
         if (node.next == invalidIndex && i != graph.goal)
             continue;
-        const color = (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = 0xff808080; // (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
         const x0 = node.coord[0] - r;
         const x1 = node.coord[0] + r;
         const y0 = node.coord[1] - r;
@@ -1469,7 +1473,7 @@ function drawGraph(graph, renderRects) {
         if (i1 === invalidIndex)
             continue;
         const node1 = graph.node[i1];
-        const color = (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = 0xff808080; // (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
         let x0 = Math.min(node0.coord[0], node1.coord[0]);
         let x1 = Math.max(node0.coord[0], node1.coord[0]);
         let y0 = Math.min(node0.coord[1], node1.coord[1]);
@@ -1489,12 +1493,12 @@ function drawGraph(graph, renderRects) {
         renderRects.addRect(x0, y0, x1, y1, color);
     }
 }
-function graphNodeIndexFromCoord(graph, coord) {
-    if (coord[0] < 0 || coord[1] < 0)
+function graphNodeIndexFromCoord(graph, x, y) {
+    if (x < 0 || y < 0)
         return invalidIndex;
-    if (coord[0] >= graph.extents[0] || coord[1] >= graph.extents[1])
+    if (x >= graph.extents[0] || y >= graph.extents[1])
         return invalidIndex;
-    return coord[0] * graph.extents[1] + coord[1];
+    return x * graph.extents[1] + y;
 }
 function createGraph(sizeX, sizeY) {
     let graph = {
@@ -1517,6 +1521,7 @@ function createGraph(sizeX, sizeY) {
     generateZigZagPath(graph);
     computeGroups(graph);
     shuffle(graph);
+    join(graph);
     return graph;
 }
 function generateZigZagPath(graph) {
@@ -1563,10 +1568,10 @@ function shuffle(graph) {
 }
 function tryRotate(graph, coord) {
     // Need to be in a square that has edges on opposite sides
-    let i00 = graphNodeIndexFromCoord(graph, coord);
-    let i10 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1]]);
-    let i01 = graphNodeIndexFromCoord(graph, [coord[0], coord[1] + 1]);
-    let i11 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1] + 1]);
+    let i00 = graphNodeIndexFromCoord(graph, coord[0], coord[1]);
+    let i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
+    let i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
+    let i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
     if (i00 === undefined || i10 === undefined || i01 === undefined || i11 === undefined)
         return false;
     // Reorient to cut down on the number of distinct cases to consider.
@@ -1667,5 +1672,33 @@ function reverse(graph, i0, i1) {
             break;
         iPrev = i;
         i = iNext;
+    }
+}
+function join(graph) {
+    const coords = [];
+    for (let x = 0; x < graph.extents[0] - 1; ++x) {
+        for (let y = 0; y < graph.extents[1] - 1; ++y) {
+            coords.push([x, y]);
+        }
+    }
+    while (coords.length > 0) {
+        const i = randomInRange(coords.length);
+        const coord = coords[i];
+        coords[i] = coords[coords.length - 1];
+        --coords.length;
+        const i00 = graphNodeIndexFromCoord(graph, coord[0], coord[1]);
+        const i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
+        const i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
+        const i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
+        const node00 = graph.node[i00];
+        const node10 = graph.node[i10];
+        const node01 = graph.node[i01];
+        const node11 = graph.node[i11];
+        if (node00.group !== node10.group ||
+            node00.group !== node01.group ||
+            node10.group !== node11.group ||
+            node01.group !== node11.group) {
+            tryRotate(graph, coord);
+        }
     }
 }

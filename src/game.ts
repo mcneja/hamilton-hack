@@ -21,6 +21,9 @@ const numCellsX = 4;
 const numCellsY = 4;
 const corridorWidth = 3;
 
+const graphSizeX = 9;
+const graphSizeY = 9;
+
 class BooleanGrid {
     sizeX: number;
     sizeY: number;
@@ -411,7 +414,7 @@ function initState(
         mapZoom: 1,
         mapZoomVelocity: 0,
         mouseSensitivity: 0,
-        graph: createGraph(8, 8),
+        graph: createGraph(graphSizeX, graphSizeY),
         player: createPlayer(level.playerStartPos),
         playerBullets: [],
         camera: createCamera(level.playerStartPos),
@@ -426,7 +429,7 @@ function resetState(
     const level = createLevel();
 
     state.renderColoredTriangles = createColoredTrianglesRenderer(level.vertexData);
-    state.graph = createGraph(8, 8);
+    state.graph = createGraph(graphSizeX, graphSizeY);
     state.player = createPlayer(level.playerStartPos);
     state.playerBullets = [];
     state.camera = createCamera(level.playerStartPos);
@@ -1110,13 +1113,13 @@ function renderScene(renderer: Renderer, state: State) {
     const screenSize = renderer.beginFrame();
 
     const matScreenFromWorld = mat4.create();
-    setupViewMatrix(state, screenSize, matScreenFromWorld);
+//    setupViewMatrix(state, screenSize, matScreenFromWorld);
 
-    state.renderColoredTriangles(matScreenFromWorld);
+//    state.renderColoredTriangles(matScreenFromWorld);
 
-    renderPlayerBullets(state, renderer, matScreenFromWorld);
+//    renderPlayerBullets(state, renderer, matScreenFromWorld);
 
-    renderPlayer(state, renderer, matScreenFromWorld);
+//    renderPlayer(state, renderer, matScreenFromWorld);
 
     setupGraphViewMatrix(state.graph, screenSize, matScreenFromWorld);
     renderer.renderRects.start(matScreenFromWorld);
@@ -1125,6 +1128,7 @@ function renderScene(renderer: Renderer, state: State) {
 
     // Text
 
+    /*
     if (state.paused) {
         renderTextLines(renderer, screenSize, [
             'HAMILTONION HACKING',
@@ -1138,6 +1142,7 @@ function renderScene(renderer: Renderer, state: State) {
             'Esc: Pause, R: Retry, M: Map',
         ]);
     }
+    */
 }
 
 function setupViewMatrix(state: State, screenSize: vec2, matScreenFromWorld: mat4) {
@@ -1927,7 +1932,7 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
         if (node.next == invalidIndex && i != graph.goal)
             continue;
 
-        const color = (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = 0xff808080; // (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
 
         const x0 = node.coord[0] - r;
         const x1 = node.coord[0] + r;
@@ -1946,7 +1951,7 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
 
         const node1 = graph.node[i1];
 
-        const color = (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = 0xff808080; // (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
 
         let x0 = Math.min(node0.coord[0], node1.coord[0]);
         let x1 = Math.max(node0.coord[0], node1.coord[0]);
@@ -1969,14 +1974,14 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
     }
 }
 
-function graphNodeIndexFromCoord(graph: Graph, coord: Coord): number {
-    if (coord[0] < 0 || coord[1] < 0)
+function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number {
+    if (x < 0 || y < 0)
         return invalidIndex;
 
-    if (coord[0] >= graph.extents[0] || coord[1] >= graph.extents[1])
+    if (x >= graph.extents[0] || y >= graph.extents[1])
         return invalidIndex;
 
-    return coord[0] * graph.extents[1] + coord[1];
+    return x * graph.extents[1] + y;
 }
 
 function createGraph(sizeX: number, sizeY: number): Graph {
@@ -2004,6 +2009,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
 
     computeGroups(graph);
     shuffle(graph);
+    join(graph);
 
     return graph;
 }
@@ -2052,10 +2058,10 @@ function shuffle(graph: Graph) {
 function tryRotate(graph: Graph, coord: Coord): boolean {
     // Need to be in a square that has edges on opposite sides
 
-    let i00 = graphNodeIndexFromCoord(graph, coord);
-    let i10 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1]]);
-    let i01 = graphNodeIndexFromCoord(graph, [coord[0], coord[1] + 1]);
-    let i11 = graphNodeIndexFromCoord(graph, [coord[0] + 1, coord[1] + 1]);
+    let i00 = graphNodeIndexFromCoord(graph, coord[0], coord[1]);
+    let i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
+    let i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
+    let i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
 
     if (i00 === undefined || i10 === undefined || i01 === undefined || i11 === undefined)
         return false;
@@ -2186,5 +2192,38 @@ function reverse(graph: Graph, i0: number, i1: number) {
 
         iPrev = i;
         i = iNext;
+    }
+}
+
+function join(graph: Graph) {
+    const coords: Array<Coord> = [];
+    for (let x = 0; x < graph.extents[0] - 1; ++x) {
+        for (let y = 0; y < graph.extents[1] - 1; ++y) {
+            coords.push([x, y]);
+        }
+    }
+
+    while (coords.length > 0) {
+        const i = randomInRange(coords.length);
+        const coord = coords[i];
+        coords[i] = coords[coords.length - 1];
+        --coords.length;
+
+        const i00 = graphNodeIndexFromCoord(graph, coord[0], coord[1]);
+        const i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
+        const i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
+        const i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
+
+        const node00 = graph.node[i00];
+        const node10 = graph.node[i10];
+        const node01 = graph.node[i01];
+        const node11 = graph.node[i11];
+
+        if (node00.group !== node10.group ||
+            node00.group !== node01.group ||
+            node10.group !== node11.group ||
+            node01.group !== node11.group) {
+            tryRotate(graph, coord);
+        }
     }
 }
