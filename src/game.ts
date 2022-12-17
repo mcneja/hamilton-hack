@@ -77,9 +77,10 @@ function main(fontImage: HTMLImageElement) {
     const renderer = createRenderer(gl, fontImage);
     const state = initState();
 
-    canvas.onmousedown = () => {
+    canvas.onpointerdown = () => {
+        resetState(state);
         if (state.paused) {
-            canvas.requestPointerLock();
+            requestUpdateAndRender();
         }
     };
 
@@ -97,40 +98,9 @@ function main(fontImage: HTMLImageElement) {
         requestAnimationFrame(now => updateAndRender(now, renderer, state));
     }
 
-    function onLockChanged() {
-        const mouseCaptured = document.pointerLockElement === canvas;
-        if (mouseCaptured) {
-            document.addEventListener("mousemove", onMouseMoved, false);
-            document.addEventListener("mousedown", onMouseDown, false);
-            if (state.paused) {
-                state.paused = false;
-                state.tLast = undefined;
-                requestUpdateAndRender();
-            }
-        } else {
-            document.removeEventListener("mousemove", onMouseMoved, false);
-            document.removeEventListener("mousedown", onMouseDown, false);
-            state.paused = true;
-        }
-    }
-
-    function onMouseMoved(e: MouseEvent) {
-    }
-
-    function onMouseDown(e: MouseEvent) {
-        if (state.paused) {
-            return;
-        }
-        if (e.button == 0) {
-        }
-    }
-
     function onWindowResized() {
         requestUpdateAndRender();
     }
-
-    document.addEventListener('pointerlockchange', onLockChanged, false);
-    document.addEventListener('mozpointerlockchange', onLockChanged, false);
 
     window.addEventListener('resize', onWindowResized);
 
