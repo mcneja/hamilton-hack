@@ -65,10 +65,17 @@ function main(fontImage) {
         }
     };
     document.body.addEventListener('keydown', e => {
-        if (e.code == 'KeyR') {
+        if (e.code === 'KeyR') {
             e.preventDefault();
             resetState(state);
             if (state.paused) {
+                requestUpdateAndRender();
+            }
+        }
+        else if (e.code === 'KeyP') {
+            e.preventDefault();
+            state.paused = !state.paused;
+            if (!state.paused) {
                 requestUpdateAndRender();
             }
         }
@@ -102,15 +109,22 @@ function createRenderer(gl, fontImage) {
     return renderer;
 }
 function initState() {
+    const graph = createGraph(graphSizeX, graphSizeY);
     return {
         tLast: undefined,
         paused: true,
-        graph: createGraph(graphSizeX, graphSizeY),
+        graph: graph,
+        enemy: {
+            nodeIndex: graph.goal,
+            progressFraction: 0,
+        },
         pointerGridPos: undefined,
     };
 }
 function resetState(state) {
     state.graph = createGraph(graphSizeX, graphSizeY);
+    state.enemy.nodeIndex = state.graph.goal;
+    state.enemy.progressFraction = 0;
 }
 function createBeginFrame(gl) {
     return () => {
@@ -526,6 +540,18 @@ function updateAndRender(now, renderer, state) {
     }
 }
 function updateState(state, dt) {
+    const enemySpeed = 1.0;
+    state.enemy.progressFraction += enemySpeed * dt;
+    while (state.enemy.progressFraction >= 1) {
+        state.enemy.progressFraction -= 1;
+        const i = state.enemy.nodeIndex;
+        if (i === undefined || state.graph.node[i].next === undefined) {
+            state.enemy.nodeIndex = state.graph.goal;
+        }
+        else {
+            state.enemy.nodeIndex = state.graph.node[i].next;
+        }
+    }
 }
 function renderScene(renderer, state) {
     const screenSize = renderer.beginFrame();
@@ -540,6 +566,24 @@ function renderScene(renderer, state) {
         }
     }
     drawGraph(state.graph, renderer.renderRects);
+    renderer.renderRects.flush();
+    const i0 = state.enemy.nodeIndex;
+    if (i0 !== undefined) {
+        const i1 = state.graph.node[i0].next;
+        if (i1 !== undefined) {
+            const pos0 = state.graph.node[i0].coord;
+            const pos1 = state.graph.node[i1].coord;
+            const pos = vec2.create();
+            vec2.lerp(pos, pos0, pos1, state.enemy.progressFraction);
+            renderer.renderDiscs(matScreenFromWorld, [{
+                    position: pos,
+                    radius: 0.25,
+                    discColor: 0xff0000ff,
+                    glyphIndex: 69,
+                    glyphColor: 0xffffffff,
+                }]);
+        }
+    }
     /*
     if (state.pointerGridPos !== undefined) {
         const x = state.pointerGridPos[0];
@@ -548,7 +592,6 @@ function renderScene(renderer, state) {
         renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
     }
     */
-    renderer.renderRects.flush();
 }
 function setupGraphViewMatrix(graphExtents, screenSize, matScreenFromWorld) {
     const mapSizeX = graphExtents[0];
@@ -662,12 +705,11 @@ function loadShader(gl, type, source) {
 function randomInRange(n) {
     return Math.floor(Math.random() * n);
 }
-const invalidIndex = -1;
 function drawGraph(graph, renderRects) {
     const r = 0.2;
     for (let i = 0; i < graph.node.length; ++i) {
         const node = graph.node[i];
-        if (node.next == invalidIndex && i != graph.goal)
+        if (node.next === undefined && i !== graph.start)
             continue;
         const color = 0xff808080; // (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
         const x0 = node.coord[0] - r;
@@ -679,7 +721,7 @@ function drawGraph(graph, renderRects) {
     for (let i0 = 0; i0 < graph.node.length; ++i0) {
         const node0 = graph.node[i0];
         const i1 = node0.next;
-        if (i1 === invalidIndex)
+        if (i1 === undefined)
             continue;
         const node1 = graph.node[i1];
         const color = 0xff808080; // (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
@@ -704,9 +746,9 @@ function drawGraph(graph, renderRects) {
 }
 function graphNodeIndexFromCoord(graph, x, y) {
     if (x < 0 || y < 0)
-        return invalidIndex;
+        return undefined;
     if (x >= graph.extents[0] || y >= graph.extents[1])
-        return invalidIndex;
+        return undefined;
     return x * graph.extents[1] + y;
 }
 function createGraph(sizeX, sizeY) {
@@ -721,7 +763,7 @@ function createGraph(sizeX, sizeY) {
         for (let y = 0; y < sizeY; ++y) {
             const node = {
                 coord: [x, y],
-                next: invalidIndex,
+                next: undefined,
                 group: 0,
             };
             graph.node.push(node);
@@ -738,25 +780,25 @@ function generateZigZagPath(graph) {
         const x = node.coord[0];
         const y = node.coord[1];
         if ((y & 1) === 0) {
-            if (x < graph.extents[0] - 1) {
-                node.next = (x + 1) * graph.extents[1] + y;
-            }
-            else if (y < graph.extents[1] - 1) {
-                node.next = x * graph.extents[1] + (y + 1);
-            }
-            else {
-                node.next = invalidIndex;
-            }
-        }
-        else {
             if (x > 0) {
                 node.next = (x - 1) * graph.extents[1] + y;
             }
-            else if (y < graph.extents[1] - 1) {
-                node.next = x * graph.extents[1] + (y + 1);
+            else if (y > 0) {
+                node.next = x * graph.extents[1] + (y - 1);
             }
             else {
-                node.next = invalidIndex;
+                node.next = undefined;
+            }
+        }
+        else {
+            if (x < graph.extents[0] - 1) {
+                node.next = (x + 1) * graph.extents[1] + y;
+            }
+            else if (y > 0) {
+                node.next = x * graph.extents[1] + (y - 1);
+            }
+            else {
+                node.next = undefined;
             }
         }
     }
@@ -845,26 +887,26 @@ function tryRotate(graph, coord) {
 function computeGroups(graph) {
     // Initialize all nodes to no group
     for (const node of graph.node) {
-        node.group = invalidIndex;
+        node.group = undefined;
     }
     // Trace the Hamiltonian path and put all of its nodes in group 0
     let group = 0;
-    for (let i = graph.start; i !== invalidIndex && graph.node[i].group === invalidIndex; i = graph.node[i].next) {
+    for (let i = graph.goal; i !== undefined && graph.node[i].group === undefined; i = graph.node[i].next) {
         graph.node[i].group = group;
     }
     ++group;
     // Put any nodes that weren't reached into additional groups
     for (let i = 0; i < graph.node.length; ++i) {
-        for (let j = i; j !== invalidIndex && graph.node[j].group === invalidIndex; j = graph.node[j].next) {
+        for (let j = i; j !== undefined && graph.node[j].group === undefined; j = graph.node[j].next) {
             graph.node[j].group = group;
         }
         ++group;
     }
 }
 function before(graph, i0, i1) {
-    if (i0 === invalidIndex)
+    if (i0 === undefined)
         return false;
-    for (let i = graph.node[i0].next; i !== i0 && i !== invalidIndex; i = graph.node[i].next) {
+    for (let i = graph.node[i0].next; i !== i0 && i !== undefined; i = graph.node[i].next) {
         if (i === i1) {
             return true;
         }
@@ -873,7 +915,7 @@ function before(graph, i0, i1) {
 }
 function reverse(graph, i0, i1) {
     let i = i0;
-    let iPrev = invalidIndex;
+    let iPrev = undefined;
     for (;;) {
         const iNext = graph.node[i].next;
         graph.node[i].next = iPrev;
@@ -899,6 +941,9 @@ function join(graph) {
         const i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
         const i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
         const i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
+        if (i00 === undefined || i10 === undefined || i01 === undefined || i11 === undefined) {
+            continue;
+        }
         const node00 = graph.node[i00];
         const node10 = graph.node[i10];
         const node01 = graph.node[i01];
