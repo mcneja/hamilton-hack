@@ -17,43 +17,29 @@ function main(fontImage) {
     }
     const renderer = createRenderer(gl, fontImage);
     const state = initState();
-    canvas.onmousedown = (event) => {
-        // resetState(state);
-        const canvas = gl.canvas;
+    function gridPosFromEventPos(x, y) {
         const canvasRect = canvas.getBoundingClientRect();
-        const screenSize = vec2.fromValues(canvasRect.right - canvasRect.left, canvasRect.bottom - canvasRect.top);
-        const posPointer = vec2.fromValues(event.clientX - canvasRect.left, canvasRect.bottom - event.clientY);
-        state.pointerGridPos = graphCoordsFromCanvasPos(state.graph.extents, screenSize, posPointer);
-        console.log('onpointerdown', screenSize, posPointer, state.pointerGridPos);
-        if (state.paused) {
-            requestUpdateAndRender();
-        }
-    };
-    /*
-    canvas.onpointermove = (event) => {
-        const posPointer = vec2.fromValues(event.clientX, event.clientY);
-
-        const canvas = gl.canvas as HTMLCanvasElement;
-        const screenSize = vec2.fromValues(canvas.clientWidth, canvas.clientHeight);
-
-        state.pointerGridCoords = graphCoordsFromCanvasPos(state.graph.extents, screenSize, posPointer);
-
-        console.log('onpointermove', screenSize, posPointer, state.pointerGridCoords);
-
-        if (state.paused) {
-            requestUpdateAndRender();
-        }
-    };
-    */
-    /*
-    canvas.onpointerleave = (event) => {
-        state.pointerGridCoords = undefined;
-
-        if (state.paused) {
-            requestUpdateAndRender();
-        }
+        const screenSize = vec2.fromValues(canvas.width, canvas.height);
+        const posPointer = vec2.fromValues(x - canvasRect.left, canvasRect.bottom - y);
+        return graphCoordsFromCanvasPos(state.graph.extents, screenSize, posPointer);
     }
-    */
+    canvas.onpointerdown = (event) => {
+        const gridPos = gridPosFromEventPos(event.clientX, event.clientY);
+        const x = Math.floor(gridPos[0]);
+        const y = Math.floor(gridPos[1]);
+        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1) {
+            tryRotate(state.graph, [x, y]);
+        }
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    };
+    canvas.onmousemove = (event) => {
+        state.pointerGridPos = gridPosFromEventPos(event.clientX, event.clientY);
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    };
     document.body.addEventListener('keydown', e => {
         if (e.code == 'KeyR') {
             e.preventDefault();
@@ -525,17 +511,19 @@ function renderScene(renderer, state) {
     if (state.pointerGridPos !== undefined) {
         const x = Math.floor(state.pointerGridPos[0]);
         const y = Math.floor(state.pointerGridPos[1]);
-        if (x >= 0 && y >= 0 && x < state.graph.extents[0] && y < state.graph.extents[1]) {
+        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1) {
             renderer.renderRects.addRect(x - 0.25, y - 0.25, x + 1.25, y + 1.25, 0xff404040);
         }
     }
     drawGraph(state.graph, renderer.renderRects);
+    /*
     if (state.pointerGridPos !== undefined) {
         const x = state.pointerGridPos[0];
         const y = state.pointerGridPos[1];
         const r = 0.05;
         renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
     }
+    */
     renderer.renderRects.flush();
 }
 function setupGraphViewMatrix(graphExtents, screenSize, matScreenFromWorld) {
