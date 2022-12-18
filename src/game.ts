@@ -58,6 +58,7 @@ type State = {
     tLast: number | undefined;
     paused: boolean;
     graph: Graph;
+    pointerGridPos: vec2 | undefined;
 }
 
 function loadResourcesThenRun() {
@@ -77,12 +78,50 @@ function main(fontImage: HTMLImageElement) {
     const renderer = createRenderer(gl, fontImage);
     const state = initState();
 
-    canvas.onpointerdown = () => {
-        resetState(state);
+    canvas.onmousedown = (event) => {
+        // resetState(state);
+
+        const canvas = gl.canvas as HTMLCanvasElement;
+        const canvasRect = canvas.getBoundingClientRect();
+
+        const screenSize = vec2.fromValues(canvasRect.right - canvasRect.left, canvasRect.bottom - canvasRect.top);
+        const posPointer = vec2.fromValues(event.clientX - canvasRect.left, canvasRect.bottom - event.clientY);
+
+        state.pointerGridPos = graphCoordsFromCanvasPos(state.graph.extents, screenSize, posPointer);
+
+        console.log('onpointerdown', screenSize, posPointer, state.pointerGridPos);
+
         if (state.paused) {
             requestUpdateAndRender();
         }
     };
+
+    /*
+    canvas.onpointermove = (event) => {
+        const posPointer = vec2.fromValues(event.clientX, event.clientY);
+
+        const canvas = gl.canvas as HTMLCanvasElement;
+        const screenSize = vec2.fromValues(canvas.clientWidth, canvas.clientHeight);
+
+        state.pointerGridCoords = graphCoordsFromCanvasPos(state.graph.extents, screenSize, posPointer);
+
+        console.log('onpointermove', screenSize, posPointer, state.pointerGridCoords);
+
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    };
+    */
+
+    /*
+    canvas.onpointerleave = (event) => {
+        state.pointerGridCoords = undefined;
+
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    }
+    */
 
     document.body.addEventListener('keydown', e => {
         if (e.code == 'KeyR') {
@@ -115,28 +154,6 @@ const loadImage = (src: string) =>
         img.src = src;
     });
 
-function lerp(v0: number, v1: number, u: number): number {
-    return v0 + (v1 - v0) * u;
-}
-
-function filterInPlace<T>(array: Array<T>, condition: (val: T, i: number, array: Array<T>) => boolean) {
-    let i = 0, j = 0;
-
-    while (i < array.length) {
-        const val = array[i];
-        if (condition(val, i, array)) {
-            if (i != j) {
-                array[j] = val;
-            }
-            ++j;
-        }
-        ++i;
-    };
-
-    array.length = j;
-    return array;
-}
-
 function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement): Renderer {
     const glyphTexture = createGlyphTextureFromImage(gl, fontImage);
 
@@ -159,6 +176,7 @@ function initState(): State {
         tLast: undefined,
         paused: true,
         graph: createGraph(graphSizeX, graphSizeY),
+        pointerGridPos: undefined,
     };
 }
 
@@ -689,15 +707,33 @@ function renderScene(renderer: Renderer, state: State) {
     const screenSize = renderer.beginFrame();
 
     const matScreenFromWorld = mat4.create();
-    setupGraphViewMatrix(state.graph, screenSize, matScreenFromWorld);
+    setupGraphViewMatrix(state.graph.extents, screenSize, matScreenFromWorld);
+
     renderer.renderRects.start(matScreenFromWorld);
+
+    if (state.pointerGridPos !== undefined) {
+        const x = Math.floor(state.pointerGridPos[0]);
+        const y = Math.floor(state.pointerGridPos[1]);
+        if (x >= 0 && y >= 0 && x < state.graph.extents[0] && y < state.graph.extents[1]) {
+            renderer.renderRects.addRect(x - 0.25, y - 0.25, x + 1.25, y + 1.25, 0xff404040);
+        }
+    }
+
     drawGraph(state.graph, renderer.renderRects);
+
+    if (state.pointerGridPos !== undefined) {
+        const x = state.pointerGridPos[0];
+        const y = state.pointerGridPos[1];
+        const r = 0.05;
+        renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
+    }
+
     renderer.renderRects.flush();
 }
 
-function setupGraphViewMatrix(graph: Graph, screenSize: vec2, matScreenFromWorld: mat4) {
-    const mapSizeX = graph.extents[0];
-    const mapSizeY = graph.extents[1];
+function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
+    const mapSizeX = graphExtents[0];
+    const mapSizeY = graphExtents[1];
 
     let rxMap: number, ryMap: number;
     if (screenSize[0] * mapSizeY < screenSize[1] * mapSizeX) {
@@ -709,10 +745,33 @@ function setupGraphViewMatrix(graph: Graph, screenSize: vec2, matScreenFromWorld
         ryMap = mapSizeY / 2;
         rxMap = ryMap * screenSize[0] / screenSize[1];
     }
-    const cxMap = (graph.extents[0] - 1) / 2;
-    const cyMap = (graph.extents[1] - 1) / 2;
+    const cxMap = (mapSizeX - 1) / 2;
+    const cyMap = (mapSizeY - 1) / 2;
 
     mat4.ortho(matScreenFromWorld, cxMap - rxMap, cxMap + rxMap, cyMap - ryMap, cyMap + ryMap, 1, -1);
+}
+
+function graphCoordsFromCanvasPos(graphExtents: Coord, screenSize: vec2, pos: vec2): vec2 {
+    const mapSizeX = graphExtents[0];
+    const mapSizeY = graphExtents[1];
+
+    let screenGridSizeX: number, screenGridSizeY: number;
+    if (screenSize[0] * mapSizeY < screenSize[1] * mapSizeX) {
+        // horizontal is limiting dimension
+        screenGridSizeX = mapSizeX;
+        screenGridSizeY = screenGridSizeX * screenSize[1] / screenSize[0];
+    } else {
+        // vertical is limiting dimension
+        screenGridSizeY = mapSizeY;
+        screenGridSizeX = screenGridSizeY * screenSize[0] / screenSize[1];
+    }
+    const screenOffsetX = (screenGridSizeX - mapSizeX) / 2 + 0.5;
+    const screenOffsetY = (screenGridSizeY - mapSizeY) / 2 + 0.5;
+
+    const gridX = pos[0] * (screenGridSizeX / screenSize[0]) - screenOffsetX;
+    const gridY = pos[1] * (screenGridSizeY / screenSize[1]) - screenOffsetY;
+
+    return vec2.fromValues(gridX, gridY);
 }
 
 function renderTextLines(renderer: Renderer, screenSize: vec2, lines: Array<string>) {
@@ -819,61 +878,8 @@ function loadShader(gl: WebGL2RenderingContext, type: number, source: string): W
     return shader;
 }
 
-type PriorityQueueElement = {
-    priority: number;
-}
-
-type PriorityQueue<T> = Array<T>;
-
-function priorityQueuePop<T extends PriorityQueueElement>(q: PriorityQueue<T>): T {
-    const x = q[0];
-    q[0] = q[q.length - 1]; // q.at(-1);
-    q.pop();
-    let i = 0;
-    const c = q.length;
-    while (true) {
-        let iChild = i;
-        const iChild0 = 2*i + 1;
-        if (iChild0 < c && q[iChild0].priority < q[iChild].priority) {
-            iChild = iChild0;
-        }
-        const iChild1 = iChild0 + 1;
-        if (iChild1 < c && q[iChild1].priority < q[iChild].priority) {
-            iChild = iChild1;
-        }
-        if (iChild == i) {
-            break;
-        }
-        [q[i], q[iChild]] = [q[iChild], q[i]];
-        i = iChild;
-    }
-    return x;
-}
-
-function priorityQueuePush<T extends PriorityQueueElement>(q: PriorityQueue<T>, x: T) {
-    q.push(x);
-    let i = q.length - 1;
-    while (i > 0) {
-        const iParent = Math.floor((i - 1) / 2);
-        if (q[i].priority >= q[iParent].priority) {
-            break;
-        }
-        [q[i], q[iParent]] = [q[iParent], q[i]];
-        i = iParent;
-    }
-}
-
 function randomInRange(n: number): number {
     return Math.floor(Math.random() * n);
-}
-
-function shuffleArray<T>(array: Array<T>) {
-    for (let i = array.length - 1; i > 0; --i) {
-        let j = randomInRange(i + 1);
-        let temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
 }
 
 const invalidIndex = -1;
