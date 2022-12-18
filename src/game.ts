@@ -6,8 +6,8 @@ import { vec2, mat4 } from './my-matrix.js';
 
 window.onload = loadResourcesThenRun;
 
-const graphSizeX = 9;
-const graphSizeY = 9;
+const graphSizeX = 11;
+const graphSizeY = 11;
 
 type Coord = [number, number];
 
@@ -201,7 +201,7 @@ function initState(): State {
     const graph = createGraph(graphSizeX, graphSizeY);
     return {
         tLast: undefined,
-        paused: true,
+        paused: false,
         graph: graph,
         enemy: {
             nodeIndex: graph.goal,
@@ -734,7 +734,7 @@ function updateAndRender(now: number, renderer: Renderer, state: State) {
 }
 
 function updateState(state: State, dt: number) {
-    const enemySpeed = 1.0;
+    const enemySpeed = 2.0;
     state.enemy.progressFraction += enemySpeed * dt;
     while (state.enemy.progressFraction >= 1) {
         state.enemy.progressFraction -= 1;
@@ -1037,7 +1037,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
 
     computeGroups(graph);
     shuffle(graph);
-//    join(graph);
+    join(graph);
 
     return graph;
 }
