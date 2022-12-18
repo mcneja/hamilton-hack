@@ -100,7 +100,37 @@ function main(fontImage: HTMLImageElement) {
     };
 
     canvas.onmousemove = (event) => {
-        state.pointerGridPos = gridPosFromEventPos(event.clientX, event.clientY);
+        const gridPos = gridPosFromEventPos(event.clientX, event.clientY);
+        if (state.pointerGridPos !== undefined &&
+            state.pointerGridPos[0] === gridPos[0] &&
+            state.pointerGridPos[1] === gridPos[1]) {
+            return;
+        }
+
+        state.pointerGridPos = gridPos;
+
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    };
+
+    canvas.onmouseenter = (event) => {
+        const gridPos = gridPosFromEventPos(event.clientX, event.clientY);
+        if (state.pointerGridPos !== undefined &&
+            state.pointerGridPos[0] === gridPos[0] &&
+            state.pointerGridPos[1] === gridPos[1]) {
+            return;
+        }
+
+        state.pointerGridPos = gridPos;
+
+        if (state.paused) {
+            requestUpdateAndRender();
+        }
+    }
+
+    canvas.onmouseleave = (event) => {
+        state.pointerGridPos = undefined;
 
         if (state.paused) {
             requestUpdateAndRender();
@@ -956,7 +986,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
 
     computeGroups(graph);
     shuffle(graph);
-    join(graph);
+//    join(graph);
 
     return graph;
 }
