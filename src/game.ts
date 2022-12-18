@@ -192,7 +192,7 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.BLEND);
-    gl.clearColor(0, 0, 0, 1);
+    gl.clearColor(0.05, 0.2, 0.05, 1);
 
     return renderer;
 }
@@ -738,11 +738,11 @@ function updateState(state: State, dt: number) {
     state.enemy.progressFraction += enemySpeed * dt;
     while (state.enemy.progressFraction >= 1) {
         state.enemy.progressFraction -= 1;
-        const i = state.enemy.nodeIndex;
-        if (i === undefined || state.graph.node[i].next === undefined) {
+        const nodeIndexNext = state.graph.node[state.enemy.nodeIndex].next;
+        if (nodeIndexNext === undefined || nodeIndexNext === state.graph.start) {
             state.enemy.nodeIndex = state.graph.goal;
         } else {
-            state.enemy.nodeIndex = state.graph.node[i].next as number;
+            state.enemy.nodeIndex = nodeIndexNext;
         }
     }
 }
@@ -759,11 +759,20 @@ function renderScene(renderer: Renderer, state: State) {
         const x = Math.floor(state.pointerGridPos[0]);
         const y = Math.floor(state.pointerGridPos[1]);
         if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1) {
-            renderer.renderRects.addRect(x - 0.25, y - 0.25, x + 1.25, y + 1.25, 0xff404040);
+            renderer.renderRects.addRect(x - 0.25, y - 0.25, x + 1.25, y + 1.25, 0x10808080);
         }
     }
 
     drawGraph(state.graph, renderer.renderRects);
+
+    /*
+    if (state.pointerGridPos !== undefined) {
+        const x = state.pointerGridPos[0];
+        const y = state.pointerGridPos[1];
+        const r = 0.05;
+        renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
+    }
+    */
 
     renderer.renderRects.flush();
 
@@ -779,22 +788,13 @@ function renderScene(renderer: Renderer, state: State) {
 
             renderer.renderDiscs(matScreenFromWorld, [{
                 position: pos,
-                radius: 0.25,
-                discColor: 0xff0000ff,
+                radius: 0.3333,
+                discColor: 0xff2020ff,
                 glyphIndex: 69,
-                glyphColor: 0xffffffff,
+                glyphColor: 0xffe0e0ff,
             }]);
         }
     }
-
-    /*
-    if (state.pointerGridPos !== undefined) {
-        const x = state.pointerGridPos[0];
-        const y = state.pointerGridPos[1];
-        const r = 0.05;
-        renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
-    }
-    */
 }
 
 function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
@@ -949,7 +949,10 @@ function randomInRange(n: number): number {
 }
 
 function drawGraph(graph: Graph, renderRects: RenderRects) {
-    const r = 0.2;
+    const r = 0.05;
+
+    const colorPath = 0xff10d0d0;
+    const colorLoop = 0xff408020;
 
     for (let i = 0; i < graph.node.length; ++i) {
         const node = graph.node[i];
@@ -957,7 +960,7 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
         if (node.next === undefined && i !== graph.start)
             continue;
 
-        const color = 0xff808080; // (node.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = (node.group === 0) ? colorPath : colorLoop;
 
         const x0 = node.coord[0] - r;
         const x1 = node.coord[0] + r;
@@ -976,7 +979,7 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
 
         const node1 = graph.node[i1];
 
-        const color = 0xff808080; // (node0.group === 0 && node1.group === 0) ? 0xff808080 : 0xffa6a6d9;
+        const color = (node0.group === 0 && node1.group === 0) ? colorPath : colorLoop;
 
         let x0 = Math.min(node0.coord[0], node1.coord[0]);
         let x1 = Math.max(node0.coord[0], node1.coord[0]);
