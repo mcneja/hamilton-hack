@@ -3,6 +3,7 @@
 */
 
 import { mat4, vec2 } from "./my-matrix";
+var fontImage = require('./font.png');
 
 window.onload = loadResourcesThenRun;
 
@@ -69,7 +70,7 @@ type State = {
 
 function loadResourcesThenRun() {
     console.log("starting load");
-    loadImage("font.png",
+    loadImage(fontImage,
         (img: HTMLImageElement) => {
             main(img);
         },
