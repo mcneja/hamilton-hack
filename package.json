@@ -1,0 +1,16 @@
+{
+  "name": "hamilton-hack",
+  "version": "1.0.0",
+  "description": "Hacking minigame inspired by Hamiltonian paths.",
+  "source": "src/index.html",
+  "scripts": {
+    "start": "parcel",
+    "build": "parcel build"
+  },
+  "devDependencies": {
+    "parcel": "latest"
+  },
+  "dependencies": {
+    "typescript": "^4.9.4"
+  }
+}

@@ -2,7 +2,7 @@
     Hamiltonian Path Hacking Minigame
 */
 
-import { vec2, mat4 } from './my-matrix.js';
+import { mat4, vec2 } from "./my-matrix";
 
 window.onload = loadResourcesThenRun;
 
@@ -68,7 +68,13 @@ type State = {
 }
 
 function loadResourcesThenRun() {
-    loadImage('font.png').then((fontImage) => { main(fontImage as HTMLImageElement); });
+    console.log("starting load");
+    loadImage("font.png").then(() => {
+        console.log("loaded font.png");
+    });
+    console.log("done loading");
+
+    //loadImage('font.png').then((fontImage) => { main(fontImage as HTMLImageElement); });
 }
 
 function main(fontImage: HTMLImageElement) {
@@ -172,13 +178,17 @@ function main(fontImage: HTMLImageElement) {
     requestUpdateAndRender();
 }
 
-const loadImage = (src: string) =>
-    new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
-    });
+const loadImage = function(src: string) {
+    console.log(`Loading Image ${src}`);
+    new URL(src);
+    console.log(`Loaded Image ${src}`);
+    // return new Promise((resolve, reject) => {
+    //     const img = new Image();
+    //     img.onload = () => resolve(img);
+    //     img.onerror = reject;
+    //     img.src = src;
+    // });
+};
 
 function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement): Renderer {
     const glyphTexture = createGlyphTextureFromImage(gl, fontImage);

@@ -1,14 +1,6 @@
 {
     "compilerOptions": {
-        "outDir": "./web",
-        "target": "es6",
-        "module": "es6",
-        "strict": true,
-        "noImplicitReturns": true,
-        "noFallthroughCasesInSwitch": true,
-    },
-    "files": [
-        "./src/game.ts",
-        "./src/my-matrix.ts",
-    ]
+        "experimentalDecorators": true,
+        "jsxImportSource": "preact"
+    }
 }
