@@ -4,11 +4,12 @@
   "description": "Hacking minigame inspired by Hamiltonian paths.",
   "source": "src/index.html",
   "scripts": {
-    "start": "parcel",
-    "build": "parcel build"
+    "start": "parcel src/index.html",
+    "build": "parcel build src/index.html"
   },
   "devDependencies": {
-    "parcel": "latest"
+    "parcel": "latest",
+    "parcel-reporter-static-files-copy": "^1.4.0"
   },
   "dependencies": {
     "typescript": "^4.9.4"

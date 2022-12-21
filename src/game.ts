@@ -69,10 +69,14 @@ type State = {
 
 function loadResourcesThenRun() {
     console.log("starting load");
-    loadImage("font.png").then(() => {
-        console.log("loaded font.png");
-    });
-    console.log("done loading");
+    loadImage("font.png",
+        (img: HTMLImageElement) => {
+            main(img);
+        },
+        (err: any) => { });
+    // loadImage("font.png").then(() => {
+    //     console.log("loaded font.png");
+    // });
 
     //loadImage('font.png').then((fontImage) => { main(fontImage as HTMLImageElement); });
 }
@@ -178,16 +182,21 @@ function main(fontImage: HTMLImageElement) {
     requestUpdateAndRender();
 }
 
-const loadImage = function(src: string) {
+const loadImage = function (src: string, continuation: (img: HTMLImageElement) => void, onError: (any) => void) {
     console.log(`Loading Image ${src}`);
-    new URL(src);
-    console.log(`Loaded Image ${src}`);
-    // return new Promise((resolve, reject) => {
-    //     const img = new Image();
-    //     img.onload = () => resolve(img);
-    //     img.onerror = reject;
-    //     img.src = src;
-    // });
+    new URL(src, import.meta.url); // Tell parcel to build this in
+
+    const img = new Image();
+    img.onload = () => {
+        console.log(`Finished loading Image ${src}`);
+        continuation(img);
+    };
+    img.onerror = (err: any) => {
+        console.log(`Error loading Image ${src}`);
+        console.log(err);
+        onError(err);
+    }
+    img.src = src;
 };
 
 function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement): Renderer {
@@ -235,7 +244,7 @@ function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
 
         const screenX = canvas.clientWidth;
         const screenY = canvas.clientHeight;
-    
+
         gl.viewport(0, 0, screenX, screenY);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -398,10 +407,10 @@ function createDiscVertexBuffer(gl: WebGL2RenderingContext) {
     }
 
     makeVert(-1, -1);
-    makeVert( 1, -1);
-    makeVert( 1,  1);
-    makeVert( 1,  1);
-    makeVert(-1,  1);
+    makeVert(1, -1);
+    makeVert(1, 1);
+    makeVert(1, 1);
+    makeVert(-1, 1);
     makeVert(-1, -1);
 
     const vertexBuffer = gl.createBuffer();
@@ -482,21 +491,21 @@ function createRectsRenderer(gl: WebGL2RenderingContext): RenderRects {
 
         const i = numQuads * wordsPerQuad;
 
-        vertexDataAsFloat32[i+0] = x0;
-        vertexDataAsFloat32[i+1] = y0;
-        vertexDataAsUint32[i+2] = color;
+        vertexDataAsFloat32[i + 0] = x0;
+        vertexDataAsFloat32[i + 1] = y0;
+        vertexDataAsUint32[i + 2] = color;
 
-        vertexDataAsFloat32[i+3] = x1;
-        vertexDataAsFloat32[i+4] = y0;
-        vertexDataAsUint32[i+5] = color;
+        vertexDataAsFloat32[i + 3] = x1;
+        vertexDataAsFloat32[i + 4] = y0;
+        vertexDataAsUint32[i + 5] = color;
 
-        vertexDataAsFloat32[i+6] = x0;
-        vertexDataAsFloat32[i+7] = y1;
-        vertexDataAsUint32[i+8] = color;
+        vertexDataAsFloat32[i + 6] = x0;
+        vertexDataAsFloat32[i + 7] = y1;
+        vertexDataAsUint32[i + 8] = color;
 
-        vertexDataAsFloat32[i+9] = x1;
-        vertexDataAsFloat32[i+10] = y1;
-        vertexDataAsUint32[i+11] = color;
+        vertexDataAsFloat32[i + 9] = x1;
+        vertexDataAsFloat32[i + 10] = y1;
+        vertexDataAsUint32[i + 11] = color;
 
         ++numQuads;
     }
@@ -611,25 +620,25 @@ function createGlyphRenderer(gl: WebGL2RenderingContext, glyphTexture: WebGLText
         const i = numQuads * wordsPerQuad;
         const srcBase = glyphIndex << 16;
 
-        vertexDataAsFloat32[i+0] = x0;
-        vertexDataAsFloat32[i+1] = y0;
-        vertexDataAsUint32[i+2] = srcBase + 256;
-        vertexDataAsUint32[i+3] = color;
+        vertexDataAsFloat32[i + 0] = x0;
+        vertexDataAsFloat32[i + 1] = y0;
+        vertexDataAsUint32[i + 2] = srcBase + 256;
+        vertexDataAsUint32[i + 3] = color;
 
-        vertexDataAsFloat32[i+4] = x1;
-        vertexDataAsFloat32[i+5] = y0;
-        vertexDataAsUint32[i+6] = srcBase + 257;
-        vertexDataAsUint32[i+7] = color;
+        vertexDataAsFloat32[i + 4] = x1;
+        vertexDataAsFloat32[i + 5] = y0;
+        vertexDataAsUint32[i + 6] = srcBase + 257;
+        vertexDataAsUint32[i + 7] = color;
 
-        vertexDataAsFloat32[i+8] = x0;
-        vertexDataAsFloat32[i+9] = y1;
-        vertexDataAsUint32[i+10] = srcBase;
-        vertexDataAsUint32[i+11] = color;
+        vertexDataAsFloat32[i + 8] = x0;
+        vertexDataAsFloat32[i + 9] = y1;
+        vertexDataAsUint32[i + 10] = srcBase;
+        vertexDataAsUint32[i + 11] = color;
 
-        vertexDataAsFloat32[i+12] = x1;
-        vertexDataAsFloat32[i+13] = y1;
-        vertexDataAsUint32[i+14] = srcBase + 1;
-        vertexDataAsUint32[i+15] = color;
+        vertexDataAsFloat32[i + 12] = x1;
+        vertexDataAsFloat32[i + 13] = y1;
+        vertexDataAsUint32[i + 14] = srcBase + 1;
+        vertexDataAsUint32[i + 15] = color;
 
         ++numQuads;
     }
@@ -670,14 +679,14 @@ function createGlyphIndexBuffer(gl: WebGL2RenderingContext, maxQuads: number): W
     const indices = new Uint16Array(maxQuads * 6);
 
     for (let i = 0; i < maxQuads; ++i) {
-        let j = 6*i;
-        let k = 4*i;
-        indices[j+0] = k+0;
-        indices[j+1] = k+1;
-        indices[j+2] = k+2;
-        indices[j+3] = k+2;
-        indices[j+4] = k+1;
-        indices[j+5] = k+3;
+        let j = 6 * i;
+        let k = 4 * i;
+        indices[j + 0] = k + 0;
+        indices[j + 1] = k + 1;
+        indices[j + 2] = k + 2;
+        indices[j + 3] = k + 2;
+        indices[j + 4] = k + 1;
+        indices[j + 5] = k + 3;
     }
 
     const indexBuffer = gl.createBuffer()!;
@@ -729,7 +738,7 @@ function createGlyphTextureFromImage(gl: WebGL2RenderingContext, image: HTMLImag
 
 function updateAndRender(now: number, renderer: Renderer, state: State) {
     const t = now / 1000;
-    const dt = (state.paused || state.tLast === undefined) ? 0 : Math.min(1/30, t - state.tLast);
+    const dt = (state.paused || state.tLast === undefined) ? 0 : Math.min(1 / 30, t - state.tLast);
     state.tLast = t;
 
     if (dt > 0) {
@@ -1220,8 +1229,7 @@ function reverse(graph: Graph, i0: number, i1: number) {
     let i = i0;
     let iPrev = undefined;
 
-    for (;;)
-    {
+    for (; ;) {
         const iNext = graph.node[i].next;
         graph.node[i].next = iPrev;
 
