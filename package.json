@@ -8,8 +8,7 @@
     "build": "parcel build src/index.html"
   },
   "devDependencies": {
-    "parcel": "latest",
-    "parcel-reporter-static-files-copy": "^1.4.0"
+    "parcel": "latest"
   },
   "dependencies": {
     "typescript": "^4.9.4"
