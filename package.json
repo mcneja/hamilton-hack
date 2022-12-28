@@ -8,9 +8,9 @@
     "build": "parcel build src/index.html"
   },
   "devDependencies": {
-    "parcel": "latest"
-  },
-  "dependencies": {
+    "@types/node": "^18.11.18",
+    "parcel": "latest",
     "typescript": "^4.9.4"
-  }
+  },
+  "dependencies": {}
 }
