@@ -183,14 +183,14 @@ function main(fontImage: HTMLImageElement) {
     requestUpdateAndRender();
 }
 
-const loadImage = function (src: string, continuation: (img: HTMLImageElement) => void, onError: (any) => void) {
+const loadImage = function (src: string, onLoad: (img: HTMLImageElement) => void, onError: (err: any) => void) {
     console.log(`Loading Image ${src}`);
     new URL(src, import.meta.url); // Tell parcel to build this in
 
     const img = new Image();
     img.onload = () => {
         console.log(`Finished loading Image ${src}`);
-        continuation(img);
+        onLoad(img);
     };
     img.onerror = (err: any) => {
         console.log(`Error loading Image ${src}`);
@@ -221,7 +221,7 @@ function initState(): State {
     const graph = createGraph(graphSizeX, graphSizeY);
     return {
         tLast: undefined,
-        paused: false,
+        paused: true,
         graph: graph,
         enemy: {
             nodeIndex: graph.goal,
@@ -291,11 +291,9 @@ function createDiscRenderer(gl: WebGL2RenderingContext, glyphTexture: WebGLTextu
         out lowp vec4 fragColor;
 
         void main() {
+            highp vec2 distFromCenter = abs(fGlyphTexCoord.xy - vec2(0.5, 0.5));
             highp float glyphOpacity =
-                step(0.0, fGlyphTexCoord.x) *
-                step(0.0, 1.0 - fGlyphTexCoord.x) *
-                step(0.0, fGlyphTexCoord.y) *
-                step(0.0, 1.0 - fGlyphTexCoord.y) *
+                step(0.0, 0.5 - max(distFromCenter.x, distFromCenter.y)) *
                 texture(uGlyphOpacity, fGlyphTexCoord).x;
             highp float r = length(fDiscPosition);
             highp float aaf = fwidth(r);
