@@ -10,19 +10,68 @@ window.onload = loadResourcesThenRun;
 const graphSizeX = 11;
 const graphSizeY = 11;
 
+class PairSet {
+    pairs: Array<[number, number]> = [];
+
+    add(i0: number, i1: number) {
+        if (i1 < i0) {
+            [i0, i1] = [i1, i0];
+        }
+
+        for (const pair of this.pairs) {
+            if (pair[0] === i0 && pair[1] === i1) {
+                return;
+            }
+        }
+
+        this.pairs.push([i0, i1]);
+    }
+
+    remove(i0: number, i1: number) {
+        if (i1 < i0) {
+            [i0, i1] = [i1, i0];
+        }
+
+        for (let i = 0; i < this.pairs.length; ) {
+            if (this.pairs[i][0] === i0 && this.pairs[i][1] === i1) {
+                this.pairs[i] = this.pairs[this.pairs.length - 1];
+                --this.pairs.length;
+            } else {
+                ++i;
+            }
+        }
+    }
+
+    has(i0: number, i1: number): boolean {
+        if (i1 < i0) {
+            [i0, i1] = [i1, i0];
+        }
+
+        for (const pair of this.pairs) {
+            if (pair[0] === i0 && pair[1] === i1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 type Coord = [number, number];
 
 type Node = {
     coord: Coord;
-    next: number | undefined;
+    next: number | undefined; // index of next node in current path
     group: number | undefined;
 }
 
 type Graph = {
-    node: Array<Node>;
+    nodes: Array<Node>;
     extents: Coord;
     start: number;
     goal: number;
+    blockedEdges: PairSet;
+    pathIsBlocked: boolean;
 }
 
 type GlyphDisc = {
@@ -756,7 +805,7 @@ function updateState(state: State, dt: number) {
     state.enemy.progressFraction += enemySpeed * dt;
     while (state.enemy.progressFraction >= 1) {
         state.enemy.progressFraction -= 1;
-        const nodeIndexNext = state.graph.node[state.enemy.nodeIndex].next;
+        const nodeIndexNext = state.graph.nodes[state.enemy.nodeIndex].next;
         if (nodeIndexNext === undefined || nodeIndexNext === state.graph.start) {
             state.enemy.nodeIndex = state.graph.goal;
         } else {
@@ -796,10 +845,10 @@ function renderScene(renderer: Renderer, state: State) {
 
     const i0 = state.enemy.nodeIndex;
     if (i0 !== undefined) {
-        const i1 = state.graph.node[i0].next;
+        const i1 = state.graph.nodes[i0].next;
         if (i1 !== undefined) {
-            const pos0 = state.graph.node[i0].coord;
-            const pos1 = state.graph.node[i1].coord;
+            const pos0 = state.graph.nodes[i0].coord;
+            const pos1 = state.graph.nodes[i1].coord;
 
             const pos = vec2.create();
             vec2.lerp(pos, pos0, pos1, state.enemy.progressFraction);
@@ -972,13 +1021,13 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
     const colorPath = 0xff10d0d0;
     const colorLoop = 0xff408020;
 
-    for (let i = 0; i < graph.node.length; ++i) {
-        const node = graph.node[i];
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        const node = graph.nodes[i];
 
         if (node.next === undefined && i !== graph.start)
             continue;
 
-        const color = (node.group === 0) ? colorPath : colorLoop;
+        const color = (node.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
 
         const x0 = node.coord[0] - r;
         const x1 = node.coord[0] + r;
@@ -988,16 +1037,16 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
         renderRects.addRect(x0, y0, x1, y1, color);
     }
 
-    for (let i0 = 0; i0 < graph.node.length; ++i0) {
-        const node0 = graph.node[i0];
+    for (let i0 = 0; i0 < graph.nodes.length; ++i0) {
+        const node0 = graph.nodes[i0];
 
         const i1 = node0.next;
         if (i1 === undefined)
             continue;
 
-        const node1 = graph.node[i1];
+        const node1 = graph.nodes[i1];
 
-        const color = (node0.group === 0 && node1.group === 0) ? colorPath : colorLoop;
+        const color = (node0.group === 0 && node1.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
 
         let x0 = Math.min(node0.coord[0], node1.coord[0]);
         let x1 = Math.max(node0.coord[0], node1.coord[0]);
@@ -1018,6 +1067,19 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
 
         renderRects.addRect(x0, y0, x1, y1, color);
     }
+
+    // Draw blocked edges
+
+    const colorBlockedEdge = 0xff101010;
+
+    for (const pair of graph.blockedEdges.pairs) {
+        const rx = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
+        const ry = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
+        const x = (graph.nodes[pair[0]].coord[0] + graph.nodes[pair[1]].coord[0]) / 2;
+        const y = (graph.nodes[pair[0]].coord[1] + graph.nodes[pair[1]].coord[1]) / 2;
+
+        renderRects.addRect(x - rx, y - ry, x + rx, y + ry, colorBlockedEdge);
+    }
 }
 
 function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | undefined {
@@ -1032,13 +1094,13 @@ function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | u
 
 function createGraph(sizeX: number, sizeY: number): Graph {
     let graph: Graph = {
-        node: [],
+        nodes: [],
         extents: [sizeX, sizeY],
         start: 0,
-        goal: 0
+        goal: 0,
+        blockedEdges: new PairSet(),
+        pathIsBlocked: false,
     };
-
-    // Build a grid, for now, and a path in it.
 
     for (let x = 0; x < sizeX; ++x) {
         for (let y = 0; y < sizeY; ++y) {
@@ -1047,47 +1109,56 @@ function createGraph(sizeX: number, sizeY: number): Graph {
                 next: undefined,
                 group: 0,
             };
-            graph.node.push(node);
+            graph.nodes.push(node);
         }
     }
 
     generateZigZagPath(graph);
 
-    computeGroups(graph);
     shuffle(graph);
     join(graph);
+
+    blockUnusedEdges(graph, 0.3333);
+
+    shuffle(graph);
+    join(graph);
+
+    tracePath(graph);
 
     return graph;
 }
 
 function generateZigZagPath(graph: Graph) {
-    for (const node of graph.node) {
+    const sizeX = graph.extents[0];
+    const sizeY = graph.extents[1];
+    const nodeIndex = (x: number, y: number): number => x * sizeY + y;
+    for (const node of graph.nodes) {
         const x = node.coord[0];
         const y = node.coord[1];
 
         if ((y & 1) === 0) {
             if (x > 0) {
-                node.next = (x - 1) * graph.extents[1] + y;
+                node.next = nodeIndex(x - 1, y);
             } else if (y > 0) {
-                node.next = x * graph.extents[1] + (y - 1);
+                node.next = nodeIndex(x, y - 1);
             } else {
                 node.next = undefined;
             }
         } else {
-            if (x < graph.extents[0] - 1) {
-                node.next = (x + 1) * graph.extents[1] + y;
+            if (x < sizeX - 1) {
+                node.next = nodeIndex(x + 1, y);
             } else if (y > 0) {
-                node.next = x * graph.extents[1] + (y - 1);
+                node.next = nodeIndex(x, y - 1);
             } else {
                 node.next = undefined;
             }
         }
     }
 
-    if ((graph.extents[1] & 1) === 0) {
-        graph.goal = graph.extents[1] - 1;
+    if ((sizeY & 1) === 0) {
+        graph.goal = sizeY - 1;
     } else {
-        graph.goal = graph.extents[0] * graph.extents[1] - 1;
+        graph.goal = sizeX * sizeY - 1;
     }
 }
 
@@ -1116,24 +1187,24 @@ function tryRotate(graph: Graph, coord: Coord): boolean {
     // We are aiming to have an edge from (0, 0) to (1, 0),
     // if possible on the main path and not a loop.
 
-    if (graph.node[i00].next === i01 || graph.node[i01].next === i00) {
+    if (graph.nodes[i00].next === i01 || graph.nodes[i01].next === i00) {
         [i10, i01] = [i01, i10];
     }
 
-    if (graph.node[i01].group === 0) {
+    if (graph.nodes[i01].group === 0) {
         [i00, i01] = [i01, i00];
         [i10, i11] = [i11, i10];
     }
 
-    if (graph.node[i10].next === i00) {
+    if (graph.nodes[i10].next === i00) {
         [i00, i10] = [i10, i00];
         [i01, i11] = [i11, i01];
     }
 
-    let node00 = graph.node[i00];
-    let node10 = graph.node[i10];
-    let node01 = graph.node[i01];
-    let node11 = graph.node[i11];
+    let node00 = graph.nodes[i00];
+    let node10 = graph.nodes[i10];
+    let node01 = graph.nodes[i01];
+    let node11 = graph.nodes[i11];
 
     // Have to have two parallel edges: one from (0, 0) to (1, 0),
     // and another either from (0, 1) to (1, 1) or from (1, 1) to (0, 1).
@@ -1154,31 +1225,24 @@ function tryRotate(graph: Graph, coord: Coord): boolean {
         return false;
 
     if (node11.next === i01) {
-        // Simple: the two edges are going in opposite directions
-
         node00.next = i01;
         node11.next = i10;
-        computeGroups(graph);
+    } else if (node01.group != 0) {
+        reverse(graph, i11, i01);
+        node00.next = i01;
+        node11.next = i10;
+    } else if (before(graph, i10, i01)) {
+        reverse(graph, i10, i01);
+        node00.next = i01;
+        node10.next = i11;
     } else {
-        // Complex: the two edges are going the same direction, so something has to be reversed
-
-        if (node01.group != 0) {
-            reverse(graph, i11, i01);
-            node00.next = i01;
-            node11.next = i10;
-            computeGroups(graph);
-        } else if (before(graph, i10, i01)) {
-            reverse(graph, i10, i01);
-            node00.next = i01;
-            node10.next = i11;
-            computeGroups(graph);
-        } else {
-            reverse(graph, i11, i00);
-            node01.next = i00;
-            node11.next = i10;
-            computeGroups(graph);
-        }
+        reverse(graph, i11, i00);
+        node01.next = i00;
+        node11.next = i10;
     }
+
+    computeGroups(graph);
+    tracePath(graph);
 
     return true;
 }
@@ -1186,7 +1250,7 @@ function tryRotate(graph: Graph, coord: Coord): boolean {
 function computeGroups(graph: Graph) {
     // Initialize all nodes to no group
 
-    for (const node of graph.node) {
+    for (const node of graph.nodes) {
         node.group = undefined;
     }
 
@@ -1194,20 +1258,37 @@ function computeGroups(graph: Graph) {
 
     let group = 0;
 
-    for (let i: number | undefined = graph.goal; i !== undefined && graph.node[i].group === undefined; i = graph.node[i].next) {
-        graph.node[i].group = group;
+    for (let i: number | undefined = graph.goal; i !== undefined && graph.nodes[i].group === undefined; i = graph.nodes[i].next) {
+        graph.nodes[i].group = group;
     }
 
     ++group;
 
     // Put any nodes that weren't reached into additional groups
 
-    for (let i = 0; i < graph.node.length; ++i) {
-        for (let j: number | undefined = i; j !== undefined && graph.node[j].group === undefined; j = graph.node[j].next) {
-            graph.node[j].group = group;
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        for (let j: number | undefined = i; j !== undefined && graph.nodes[j].group === undefined; j = graph.nodes[j].next) {
+            graph.nodes[j].group = group;
         }
 
         ++group;
+    }
+}
+
+function tracePath(graph: Graph) {
+    const currentPath = [];
+    currentPath.length = 0;
+    for (let i: number | undefined = graph.goal; i !== undefined; i = graph.nodes[i].next) {
+        currentPath.push(i);
+    }
+    currentPath.reverse();
+
+    graph.pathIsBlocked = false;
+    for (let i = 1; i < currentPath.length; ++i) {
+        if (graph.blockedEdges.has(currentPath[i-1], currentPath[i])) {
+            graph.pathIsBlocked = true;
+            break;
+        }
     }
 }
 
@@ -1215,7 +1296,7 @@ function before(graph: Graph, i0: number, i1: number): boolean {
     if (i0 === undefined)
         return false;
 
-    for (let i = graph.node[i0].next; i !== i0 && i !== undefined; i = graph.node[i].next) {
+    for (let i = graph.nodes[i0].next; i !== i0 && i !== undefined; i = graph.nodes[i].next) {
         if (i === i1) {
             return true;
         }
@@ -1229,8 +1310,8 @@ function reverse(graph: Graph, i0: number, i1: number) {
     let iPrev = undefined;
 
     for (; ;) {
-        const iNext = graph.node[i].next;
-        graph.node[i].next = iPrev;
+        const iNext = graph.nodes[i].next;
+        graph.nodes[i].next = iPrev;
 
         if (i === i1)
             break;
@@ -1263,10 +1344,10 @@ function join(graph: Graph) {
             continue;
         }
 
-        const node00 = graph.node[i00];
-        const node10 = graph.node[i10];
-        const node01 = graph.node[i01];
-        const node11 = graph.node[i11];
+        const node00 = graph.nodes[i00];
+        const node10 = graph.nodes[i10];
+        const node01 = graph.nodes[i01];
+        const node11 = graph.nodes[i11];
 
         if (node00.group !== node10.group ||
             node00.group !== node01.group ||
@@ -1274,5 +1355,39 @@ function join(graph: Graph) {
             node01.group !== node11.group) {
             tryRotate(graph, coord);
         }
+    }
+}
+
+function blockUnusedEdges(graph: Graph, unusedEdgeFraction: number) {
+    const edges = new PairSet();
+
+    for (let x = 0; x < graph.extents[0] - 1; ++x) {
+        for (let y = 0; y < graph.extents[1]; ++y) {
+            const i0 = graphNodeIndexFromCoord(graph, x, y);
+            const i1 = graphNodeIndexFromCoord(graph, x + 1, y);
+            if (graph.nodes[i0].next !== i1 && graph.nodes[i1].next !== i0) {
+                edges.add(i0, i1);
+            }
+        }
+    }
+
+    for (let x = 0; x < graph.extents[0]; ++x) {
+        for (let y = 0; y < graph.extents[1] - 1; ++y) {
+            const i0 = graphNodeIndexFromCoord(graph, x, y);
+            const i1 = graphNodeIndexFromCoord(graph, x, y + 1);
+            if (graph.nodes[i0].next !== i1 && graph.nodes[i1].next !== i0) {
+                edges.add(i0, i1);
+            }
+        }
+    }
+
+    let numEdgesToBlock = Math.min(edges.pairs.length, Math.floor(edges.pairs.length * unusedEdgeFraction));
+
+    while (numEdgesToBlock > 0) {
+        const i = randomInRange(edges.pairs.length);
+        graph.blockedEdges.add(edges.pairs[i][0], edges.pairs[i][1]);
+        edges.pairs[i] = edges.pairs[edges.pairs.length - 1];
+        --edges.pairs.length;
+        --numEdgesToBlock;
     }
 }
