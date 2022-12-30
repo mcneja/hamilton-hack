@@ -57,6 +57,13 @@ class PairSet {
     }
 }
 
+enum GameState {
+    Paused,
+    Active,
+    Won,
+    Lost,
+}
+
 type Coord = [number, number];
 
 type Node = {
@@ -72,6 +79,7 @@ type Graph = {
     goal: number;
     blockedEdges: PairSet;
     pathIsBlocked: boolean;
+    pathIsWin: boolean;
 }
 
 type GlyphDisc = {
@@ -111,7 +119,7 @@ type Enemy = {
 
 type State = {
     tLast: number | undefined;
-    paused: boolean;
+    gameState: GameState;
     graph: Graph;
     enemy: Enemy;
     pointerGridPos: vec2 | undefined;
@@ -156,13 +164,21 @@ function main(fontImage: HTMLImageElement) {
 
         const x = Math.floor(gridPos[0]);
         const y = Math.floor(gridPos[1]);
-        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1) {
-            tryRotate(state.graph, [x, y]);
+        if (x < 0 || y < 0 || x >= state.graph.extents[0] - 1 || y >= state.graph.extents[1] - 1) {
+            return;
         }
 
-        if (state.paused) {
-            requestUpdateAndRender();
+        if (!tryRotate(state.graph, [x, y])) {
+            return;
         }
+
+        if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
+            state.gameState = GameState.Won;
+        } else if (state.gameState === GameState.Paused) {
+            state.gameState = GameState.Active;
+        }
+
+        requestUpdateAndRender();
     };
 
     canvas.onmousemove = (event) => {
@@ -175,7 +191,7 @@ function main(fontImage: HTMLImageElement) {
 
         state.pointerGridPos = gridPos;
 
-        if (state.paused) {
+        if (isPaused(state.gameState)) {
             requestUpdateAndRender();
         }
     };
@@ -190,7 +206,7 @@ function main(fontImage: HTMLImageElement) {
 
         state.pointerGridPos = gridPos;
 
-        if (state.paused) {
+        if (isPaused(state.gameState)) {
             requestUpdateAndRender();
         }
     }
@@ -198,7 +214,7 @@ function main(fontImage: HTMLImageElement) {
     canvas.onmouseleave = (event) => {
         state.pointerGridPos = undefined;
 
-        if (state.paused) {
+        if (isPaused(state.gameState)) {
             requestUpdateAndRender();
         }
     };
@@ -207,13 +223,15 @@ function main(fontImage: HTMLImageElement) {
         if (e.code === 'KeyR') {
             e.preventDefault();
             resetState(state);
-            if (state.paused) {
+            if (isPaused(state.gameState)) {
                 requestUpdateAndRender();
             }
         } else if (e.code === 'KeyP') {
             e.preventDefault();
-            state.paused = !state.paused;
-            if (!state.paused) {
+            if (state.gameState === GameState.Active) {
+                state.gameState = GameState.Paused;
+            } else if (state.gameState === GameState.Paused) {
+                state.gameState = GameState.Active;
                 requestUpdateAndRender();
             }
         }
@@ -232,7 +250,11 @@ function main(fontImage: HTMLImageElement) {
     requestUpdateAndRender();
 }
 
-const loadImage = function (src: string, onLoad: (img: HTMLImageElement) => void, onError: (err: any) => void) {
+function isPaused(gameState: GameState): boolean {
+    return gameState !== GameState.Active;
+}
+
+function loadImage(src: string, onLoad: (img: HTMLImageElement) => void, onError: (err: any) => void) {
     console.log(`Loading Image ${src}`);
     new URL(src, import.meta.url); // Tell parcel to build this in
 
@@ -270,7 +292,7 @@ function initState(): State {
     const graph = createGraph(graphSizeX, graphSizeY);
     return {
         tLast: undefined,
-        paused: true,
+        gameState: GameState.Paused,
         graph: graph,
         enemy: {
             nodeIndex: graph.goal,
@@ -284,6 +306,7 @@ function resetState(state: State) {
     state.graph = createGraph(graphSizeX, graphSizeY);
     state.enemy.nodeIndex = state.graph.goal;
     state.enemy.progressFraction = 0;
+    state.gameState = GameState.Paused;
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
@@ -786,7 +809,7 @@ function createGlyphTextureFromImage(gl: WebGL2RenderingContext, image: HTMLImag
 
 function updateAndRender(now: number, renderer: Renderer, state: State) {
     const t = now / 1000;
-    const dt = (state.paused || state.tLast === undefined) ? 0 : Math.min(1 / 30, t - state.tLast);
+    const dt = (isPaused(state.gameState) || state.tLast === undefined) ? 0 : Math.min(1 / 30, t - state.tLast);
     state.tLast = t;
 
     if (dt > 0) {
@@ -795,19 +818,21 @@ function updateAndRender(now: number, renderer: Renderer, state: State) {
 
     renderScene(renderer, state);
 
-    if (!state.paused) {
+    if (!isPaused(state.gameState)) {
         requestAnimationFrame(now => updateAndRender(now, renderer, state));
     }
 }
 
 function updateState(state: State, dt: number) {
-    const enemySpeed = 2.0;
+    const enemySpeed = 1.0;
     state.enemy.progressFraction += enemySpeed * dt;
     while (state.enemy.progressFraction >= 1) {
         state.enemy.progressFraction -= 1;
         const nodeIndexNext = state.graph.nodes[state.enemy.nodeIndex].next;
         if (nodeIndexNext === undefined || nodeIndexNext === state.graph.start) {
-            state.enemy.nodeIndex = state.graph.goal;
+            state.gameState = GameState.Lost;
+            state.enemy.progressFraction = 1;
+            break;
         } else {
             state.enemy.nodeIndex = nodeIndexNext;
         }
@@ -830,36 +855,29 @@ function renderScene(renderer: Renderer, state: State) {
         }
     }
 
-    drawGraph(state.graph, renderer.renderRects);
-
-    /*
-    if (state.pointerGridPos !== undefined) {
-        const x = state.pointerGridPos[0];
-        const y = state.pointerGridPos[1];
-        const r = 0.05;
-        renderer.renderRects.addRect(x - r, y - r, x + r, y + r, 0xffffffff);
-    }
-    */
+    drawGraph(state.graph, state.gameState, renderer.renderRects, renderer.renderDiscs, matScreenFromWorld);
 
     renderer.renderRects.flush();
 
-    const i0 = state.enemy.nodeIndex;
-    if (i0 !== undefined) {
-        const i1 = state.graph.nodes[i0].next;
-        if (i1 !== undefined) {
-            const pos0 = state.graph.nodes[i0].coord;
-            const pos1 = state.graph.nodes[i1].coord;
+    if (state.gameState !== GameState.Won) {
+        const i0 = state.enemy.nodeIndex;
+        if (i0 !== undefined) {
+            const i1 = state.graph.nodes[i0].next;
+            if (i1 !== undefined) {
+                const pos0 = state.graph.nodes[i0].coord;
+                const pos1 = state.graph.nodes[i1].coord;
 
-            const pos = vec2.create();
-            vec2.lerp(pos, pos0, pos1, state.enemy.progressFraction);
+                const pos = vec2.create();
+                vec2.lerp(pos, pos0, pos1, state.enemy.progressFraction);
 
-            renderer.renderDiscs(matScreenFromWorld, [{
-                position: pos,
-                radius: 0.3333,
-                discColor: 0xff2020ff,
-                glyphIndex: 69,
-                glyphColor: 0xffe0e0ff,
-            }]);
+                renderer.renderDiscs(matScreenFromWorld, [{
+                    position: pos,
+                    radius: 0.25,
+                    discColor: 0xff2020ff,
+                    glyphIndex: 69,
+                    glyphColor: 0xffe0e0ff,
+                }]);
+            }
         }
     }
 }
@@ -1015,11 +1033,13 @@ function randomInRange(n: number): number {
     return Math.floor(Math.random() * n);
 }
 
-function drawGraph(graph: Graph, renderRects: RenderRects) {
+function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
     const r = 0.05;
 
-    const colorPath = 0xff10d0d0;
-    const colorLoop = 0xff408020;
+    const colorPath = gameState === GameState.Lost ? 0xff0000ff : 0xff10d0d0;
+    const colorLoop = gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
+
+    const discs: Array<GlyphDisc> = [];
 
     for (let i = 0; i < graph.nodes.length; ++i) {
         const node = graph.nodes[i];
@@ -1029,13 +1049,19 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
 
         const color = (node.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
 
-        const x0 = node.coord[0] - r;
-        const x1 = node.coord[0] + r;
-        const y0 = node.coord[1] - r;
-        const y1 = node.coord[1] + r;
+        const x = node.coord[0];
+        const y = node.coord[1];
 
-        renderRects.addRect(x0, y0, x1, y1, color);
+        discs.push({
+            position: [x, y],
+            radius: 0.1,
+            discColor: color,
+            glyphIndex: 32,
+            glyphColor: color,
+        });
     }
+
+    renderDiscs(matScreenFromWorld, discs);
 
     for (let i0 = 0; i0 < graph.nodes.length; ++i0) {
         const node0 = graph.nodes[i0];
@@ -1073,8 +1099,8 @@ function drawGraph(graph: Graph, renderRects: RenderRects) {
     const colorBlockedEdge = 0xff101010;
 
     for (const pair of graph.blockedEdges.pairs) {
-        const rx = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
-        const ry = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
+        const rx = 0.2 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
+        const ry = 0.2 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
         const x = (graph.nodes[pair[0]].coord[0] + graph.nodes[pair[1]].coord[0]) / 2;
         const y = (graph.nodes[pair[0]].coord[1] + graph.nodes[pair[1]].coord[1]) / 2;
 
@@ -1100,6 +1126,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
         goal: 0,
         blockedEdges: new PairSet(),
         pathIsBlocked: false,
+        pathIsWin: false,
     };
 
     for (let x = 0; x < sizeX; ++x) {
@@ -1121,7 +1148,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
     blockUnusedEdges(graph, 0.3333);
 
     shuffle(graph);
-    join(graph);
+//    join(graph);
 
     tracePath(graph);
 
@@ -1163,7 +1190,7 @@ function generateZigZagPath(graph: Graph) {
 }
 
 function shuffle(graph: Graph) {
-    const numShuffles = 4 * (graph.extents[0] - 1) * (graph.extents[1] - 1);
+    const numShuffles = 4 * graph.extents[0] * graph.extents[1];
     for (let n = numShuffles; n > 0; --n) {
         const x = randomInRange(graph.extents[0] - 1);
         const y = randomInRange(graph.extents[1] - 1);
@@ -1290,6 +1317,10 @@ function tracePath(graph: Graph) {
             break;
         }
     }
+
+    // Record whether the current path is a win state.
+
+    graph.pathIsWin = !graph.pathIsBlocked && currentPath.length === graph.nodes.length;
 }
 
 function before(graph: Graph, i0: number, i1: number): boolean {
