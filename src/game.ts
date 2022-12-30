@@ -2,13 +2,12 @@
     Hamiltonian Path Hacking Minigame
 */
 
+import { stat } from "fs";
 import { mat4, vec2 } from "./my-matrix";
 var fontImage = require('./font.png');
 
 window.onload = loadResourcesThenRun;
 
-const graphSizeX = 11;
-const graphSizeY = 11;
 const dtCapture = 0.75;
 
 class PairSet {
@@ -126,6 +125,7 @@ type State = {
     enemy: Enemy;
     pointerGridPos: vec2 | undefined;
     dtCapture: number;
+    level: number;
 }
 
 function loadResourcesThenRun() {
@@ -168,6 +168,10 @@ function main(fontImage: HTMLImageElement) {
         const x = Math.floor(gridPos[0]);
         const y = Math.floor(gridPos[1]);
         if (x < 0 || y < 0 || x >= state.graph.extents[0] - 1 || y >= state.graph.extents[1] - 1) {
+            if (state.gameState === GameState.Lost || state.gameState === GameState.Won) {
+                resetState(state);
+                requestUpdateAndRender();
+            }
             return;
         }
 
@@ -175,10 +179,12 @@ function main(fontImage: HTMLImageElement) {
             return;
         }
 
-        if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
-            state.gameState = GameState.Won;
-        } else if (state.gameState === GameState.Paused) {
-            state.gameState = GameState.Active;
+        if (state.gameState !== GameState.Lost) {
+            if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
+                state.gameState = GameState.Won;
+            } else if (state.gameState === GameState.Paused) {
+                state.gameState = GameState.Active;
+            }
         }
 
         requestUpdateAndRender();
@@ -292,7 +298,7 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 }
 
 function initState(): State {
-    const graph = createGraph(graphSizeX, graphSizeY);
+    const graph = createGraph(0);
     return {
         tLast: undefined,
         gameState: GameState.Paused,
@@ -303,11 +309,17 @@ function initState(): State {
         },
         pointerGridPos: undefined,
         dtCapture: dtCapture,
+        level: 0,
     };
 }
 
 function resetState(state: State) {
-    state.graph = createGraph(graphSizeX, graphSizeY);
+    if (state.gameState === GameState.Lost) {
+        state.level = Math.max(0, state.level - 1);
+    } else if (state.gameState === GameState.Won) {
+        state.level = Math.min(30, state.level + 1);
+    }
+    state.graph = createGraph(state.level);
     state.enemy.nodeIndex = state.graph.goal;
     state.enemy.progressFraction = 0;
     state.gameState = GameState.Paused;
@@ -1058,17 +1070,13 @@ function randomInRange(n: number): number {
 function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
     const r = 0.05;
 
-    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff10d0d0;
+    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff80ff40;
     const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
 
     const discs: Array<GlyphDisc> = [];
 
     for (let i = 0; i < graph.nodes.length; ++i) {
         const node = graph.nodes[i];
-
-        if (!node.captured) {
-            continue;
-        }
 
         if (node.next === undefined && i !== graph.start) {
             continue;
@@ -1077,7 +1085,7 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
         const x = node.coord[0];
         const y = node.coord[1];
 
-        const color = 0xff0000ff;
+        const color = node.captured ? 0xff0000ff : 0xff102008;
 
         discs.push({
             position: [x, y],
@@ -1088,6 +1096,7 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
         });
     }
 
+    /*
     for (let i = 0; i < graph.nodes.length; ++i) {
         const node = graph.nodes[i];
 
@@ -1107,6 +1116,7 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
             glyphColor: color,
         });
     }
+    */
 
     renderDiscs(matScreenFromWorld, discs);
 
@@ -1121,22 +1131,10 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
 
         const color = (node0.group === 0 && node1.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
 
-        let x0 = Math.min(node0.coord[0], node1.coord[0]);
-        let x1 = Math.max(node0.coord[0], node1.coord[0]);
-        let y0 = Math.min(node0.coord[1], node1.coord[1]);
-        let y1 = Math.max(node0.coord[1], node1.coord[1]);
-
-        if (node0.coord[0] === node1.coord[0]) {
-            x0 -= r;
-            x1 += r;
-            y0 += r;
-            y1 -= r;
-        } else {
-            x0 += r;
-            x1 -= r;
-            y0 -= r;
-            y1 += r;
-        }
+        let x0 = Math.min(node0.coord[0], node1.coord[0]) - r;
+        let x1 = Math.max(node0.coord[0], node1.coord[0]) + r;
+        let y0 = Math.min(node0.coord[1], node1.coord[1]) - r;
+        let y1 = Math.max(node0.coord[1], node1.coord[1]) + r;
 
         renderRects.addRect(x0, y0, x1, y1, color);
     }
@@ -1165,7 +1163,11 @@ function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | u
     return x * graph.extents[1] + y;
 }
 
-function createGraph(sizeX: number, sizeY: number): Graph {
+function createGraph(level: number): Graph {
+    level += 6;
+    const sizeX = Math.floor(level / 2);
+    const sizeY = Math.ceil(level / 2);
+
     let graph: Graph = {
         nodes: [],
         extents: [sizeX, sizeY],
