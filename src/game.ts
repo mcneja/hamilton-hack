@@ -9,6 +9,7 @@ window.onload = loadResourcesThenRun;
 
 const graphSizeX = 11;
 const graphSizeY = 11;
+const dtCapture = 0.75;
 
 class PairSet {
     pairs: Array<[number, number]> = [];
@@ -70,6 +71,7 @@ type Node = {
     coord: Coord;
     next: number | undefined; // index of next node in current path
     group: number | undefined;
+    captured: boolean;
 }
 
 type Graph = {
@@ -123,6 +125,7 @@ type State = {
     graph: Graph;
     enemy: Enemy;
     pointerGridPos: vec2 | undefined;
+    dtCapture: number;
 }
 
 function loadResourcesThenRun() {
@@ -299,6 +302,7 @@ function initState(): State {
             progressFraction: 0,
         },
         pointerGridPos: undefined,
+        dtCapture: dtCapture,
     };
 }
 
@@ -824,6 +828,8 @@ function updateAndRender(now: number, renderer: Renderer, state: State) {
 }
 
 function updateState(state: State, dt: number) {
+
+    /*
     const enemySpeed = 1.0;
     state.enemy.progressFraction += enemySpeed * dt;
     while (state.enemy.progressFraction >= 1) {
@@ -835,6 +841,20 @@ function updateState(state: State, dt: number) {
             break;
         } else {
             state.enemy.nodeIndex = nodeIndexNext;
+        }
+    }
+    */
+
+    state.dtCapture -= dt;
+    while (state.dtCapture <= 0) {
+        state.dtCapture += dtCapture;
+
+        const i = nextUncapturedNode(state.graph);
+        if (i !== undefined) {
+            state.graph.nodes[i].captured = true;
+            if (i === state.graph.start) {
+                state.gameState = GameState.Lost;
+            }
         }
     }
 }
@@ -859,6 +879,7 @@ function renderScene(renderer: Renderer, state: State) {
 
     renderer.renderRects.flush();
 
+    /*
     if (state.gameState !== GameState.Won) {
         const i0 = state.enemy.nodeIndex;
         if (i0 !== undefined) {
@@ -880,6 +901,7 @@ function renderScene(renderer: Renderer, state: State) {
             }
         }
     }
+    */
 }
 
 function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
@@ -1036,10 +1058,35 @@ function randomInRange(n: number): number {
 function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
     const r = 0.05;
 
-    const colorPath = gameState === GameState.Lost ? 0xff0000ff : 0xff10d0d0;
-    const colorLoop = gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
+    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff10d0d0;
+    const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
 
     const discs: Array<GlyphDisc> = [];
+
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        const node = graph.nodes[i];
+
+        if (!node.captured) {
+            continue;
+        }
+
+        if (node.next === undefined && i !== graph.start) {
+            continue;
+        }
+
+        const x = node.coord[0];
+        const y = node.coord[1];
+
+        const color = 0xff0000ff;
+
+        discs.push({
+            position: [x, y],
+            radius: 0.15,
+            discColor: color,
+            glyphIndex: 32,
+            glyphColor: color,
+        });
+    }
 
     for (let i = 0; i < graph.nodes.length; ++i) {
         const node = graph.nodes[i];
@@ -1135,6 +1182,7 @@ function createGraph(sizeX: number, sizeY: number): Graph {
                 coord: [x, y],
                 next: undefined,
                 group: 0,
+                captured: false,
             };
             graph.nodes.push(node);
         }
@@ -1304,7 +1352,6 @@ function computeGroups(graph: Graph) {
 
 function tracePath(graph: Graph) {
     const currentPath = [];
-    currentPath.length = 0;
     for (let i: number | undefined = graph.goal; i !== undefined; i = graph.nodes[i].next) {
         currentPath.push(i);
     }
@@ -1321,6 +1368,16 @@ function tracePath(graph: Graph) {
     // Record whether the current path is a win state.
 
     graph.pathIsWin = !graph.pathIsBlocked && currentPath.length === graph.nodes.length;
+}
+
+function nextUncapturedNode(graph: Graph): number | undefined {
+    for (let i: number | undefined = graph.goal; i !== undefined; i = graph.nodes[i].next) {
+        if (!graph.nodes[i].captured) {
+            return i;
+        }
+    }
+
+    return undefined;
 }
 
 function before(graph: Graph, i0: number, i1: number): boolean {
