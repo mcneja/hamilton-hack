@@ -1164,9 +1164,8 @@ function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | u
 }
 
 function createGraph(level: number): Graph {
-    level += 6;
-    const sizeX = Math.floor(level / 2);
-    const sizeY = Math.ceil(level / 2);
+    const sizeX = 2 * level + 3;
+    const sizeY = 2 * level + 3;
 
     let graph: Graph = {
         nodes: [],
