@@ -2,7 +2,6 @@
     Hamiltonian Path Hacking Minigame
 */
 
-import { stat } from "fs";
 import { mat4, vec2 } from "./my-matrix";
 var fontImage = require('./font.png');
 
