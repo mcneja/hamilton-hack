@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
-        "experimentalDecorators": true,
-        "jsxImportSource": "preact"
+        "strict": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
     }
 }
