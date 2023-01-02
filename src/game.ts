@@ -901,15 +901,21 @@ function renderScene(renderer: Renderer, state: State) {
     const matScreenFromWorld = mat4.create();
     setupGraphViewMatrix(state.graph.extents, screenSize, matScreenFromWorld);
 
-    renderer.renderRects.start(matScreenFromWorld);
-
     if (state.pointerGridPos !== undefined) {
         const x = Math.floor(state.pointerGridPos[0]);
         const y = Math.floor(state.pointerGridPos[1]);
-        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1) {
-            renderer.renderRects.addRect(x - 0.25, y - 0.25, x + 1.25, y + 1.25, 0x10808080);
+        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1 && canRotate(state.graph, [x, y])) {
+            renderer.renderDiscs(matScreenFromWorld, [{
+                position: [x + 0.5, y + 0.5],
+                radius: 0.75,
+                discColor: 0x10808080,
+                glyphIndex: 32,
+                glyphColor: 0x10808080,
+            }]);
         }
     }
+
+    renderer.renderRects.start(matScreenFromWorld);
 
     drawGraph(state.graph, state.gameState, renderer.renderRects, renderer.renderDiscs, matScreenFromWorld);
 
@@ -1421,6 +1427,61 @@ function tryRotate(graph: Graph, coord: Coord): boolean {
 
     computeGroups(graph);
     tracePath(graph);
+
+    return true;
+}
+
+function canRotate(graph: Graph, coord: Coord): boolean {
+    // Need to be in a square that has edges on opposite sides
+
+    let i00 = graphNodeIndexFromCoord(graph, coord[0], coord[1]);
+    let i10 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1]);
+    let i01 = graphNodeIndexFromCoord(graph, coord[0], coord[1] + 1);
+    let i11 = graphNodeIndexFromCoord(graph, coord[0] + 1, coord[1] + 1);
+
+    if (i00 === undefined || i10 === undefined || i01 === undefined || i11 === undefined)
+        return false;
+
+    // Reorient to cut down on the number of distinct cases to consider.
+    // We are aiming to have an edge from (0, 0) to (1, 0),
+    // if possible on the main path and not a loop.
+
+    if (graph.nodes[i00].next === i01 || graph.nodes[i01].next === i00) {
+        [i10, i01] = [i01, i10];
+    }
+
+    if (graph.nodes[i01].group === 0) {
+        [i00, i01] = [i01, i00];
+        [i10, i11] = [i11, i10];
+    }
+
+    if (graph.nodes[i10].next === i00) {
+        [i00, i10] = [i10, i00];
+        [i01, i11] = [i11, i01];
+    }
+
+    let node00 = graph.nodes[i00];
+    let node10 = graph.nodes[i10];
+    let node01 = graph.nodes[i01];
+    let node11 = graph.nodes[i11];
+
+    // Have to have two parallel edges: one from (0, 0) to (1, 0),
+    // and another either from (0, 1) to (1, 1) or from (1, 1) to (0, 1).
+
+    if (node00.next !== i10)
+        return false;
+
+    if (node01.next !== i11 && node11.next !== i01)
+        return false;
+
+    if (node01.next === i00)
+        return false;
+
+    if (node10.next === i11)
+        return false;
+
+    if (node11.next === i10)
+        return false;
 
     return true;
 }
