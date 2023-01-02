@@ -69,6 +69,7 @@ type Node = {
     coord: Coord;
     next: number | undefined; // index of next node in current path
     group: number | undefined;
+    sectionLength: number;
     captured: boolean;
 }
 
@@ -178,6 +179,8 @@ function main(fontImage: HTMLImageElement) {
             return;
         }
 
+        computeSubPathLengths(state.graph);
+
         if (state.gameState !== GameState.Lost) {
             if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
                 state.gameState = GameState.Won;
@@ -231,15 +234,27 @@ function main(fontImage: HTMLImageElement) {
         if (e.code === 'KeyR') {
             e.preventDefault();
             resetState(state);
-            if (isPaused(state.gameState)) {
-                requestUpdateAndRender();
-            }
+            requestUpdateAndRender();
         } else if (e.code === 'KeyP') {
             e.preventDefault();
             if (state.gameState === GameState.Active) {
                 state.gameState = GameState.Paused;
             } else if (state.gameState === GameState.Paused) {
                 state.gameState = GameState.Active;
+                requestUpdateAndRender();
+            }
+        } else if (e.code === 'PageDown') {
+            e.preventDefault();
+            if (state.level < 20) {
+                ++state.level;
+                resetState(state);
+                requestUpdateAndRender();
+            }
+        } else if (e.code === 'PageUp') {
+            e.preventDefault();
+            if (state.level > 0) {
+                --state.level;
+                resetState(state);
                 requestUpdateAndRender();
             }
         }
@@ -313,11 +328,13 @@ function initState(): State {
 }
 
 function resetState(state: State) {
+    /*
     if (state.gameState === GameState.Lost) {
         state.level = Math.max(0, state.level - 1);
     } else if (state.gameState === GameState.Won) {
         state.level = Math.min(30, state.level + 1);
     }
+    */
     state.graph = createGraph(state.level);
     state.enemy.nodeIndex = state.graph.goal;
     state.enemy.progressFraction = 0;
@@ -860,6 +877,7 @@ function updateState(state: State, dt: number) {
     while (state.dtCapture <= 0) {
         state.dtCapture += dtCapture;
 
+        /*
         const i = nextUncapturedNode(state.graph);
         if (i !== undefined) {
             state.graph.nodes[i].captured = true;
@@ -867,6 +885,7 @@ function updateState(state: State, dt: number) {
                 state.gameState = GameState.Lost;
             }
         }
+        */
     }
 }
 
@@ -1069,9 +1088,12 @@ function randomInRange(n: number): number {
 function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
     const r = 0.05;
 
-    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff80ff40;
-    const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
+//    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff80ff40;
+//    const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
+    const colorPath = 0xff00ffff;
+    const colorLoop = 0xff204010;
 
+    /*
     const discs: Array<GlyphDisc> = [];
 
     for (let i = 0; i < graph.nodes.length; ++i) {
@@ -1094,6 +1116,7 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
             glyphColor: color,
         });
     }
+    */
 
     /*
     for (let i = 0; i < graph.nodes.length; ++i) {
@@ -1117,7 +1140,9 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
     }
     */
 
+    /*
     renderDiscs(matScreenFromWorld, discs);
+    */
 
     for (let i0 = 0; i0 < graph.nodes.length; ++i0) {
         const node0 = graph.nodes[i0];
@@ -1128,14 +1153,28 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
 
         const node1 = graph.nodes[i1];
 
-        const color = (node0.group === 0 && node1.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
+        // const color = (node0.group === 0 && node1.group === 0 && !graph.pathIsBlocked) ? colorPath : colorLoop;
 
-        let x0 = Math.min(node0.coord[0], node1.coord[0]) - r;
-        let x1 = Math.max(node0.coord[0], node1.coord[0]) + r;
-        let y0 = Math.min(node0.coord[1], node1.coord[1]) - r;
-        let y1 = Math.max(node0.coord[1], node1.coord[1]) + r;
+        const dx = node1.coord[0] - node0.coord[0];
+        const dy = node1.coord[1] - node0.coord[1];
 
-        renderRects.addRect(x0, y0, x1, y1, color);
+        const x = node0.coord[0];
+        const y = node0.coord[1];
+
+        const color0 = colorLerp(colorLoop, colorPath, node0.sectionLength / graph.nodes.length);
+        const color1 = colorLerp(colorLoop, colorPath, node1.sectionLength / graph.nodes.length);
+
+        const rx = Math.abs(dx) * (0.25 - 0.5 * r) + r;
+        const ry = Math.abs(dy) * (0.25 - 0.5 * r) + r;
+
+        const cx0 = x + dx * (0.25 - r / 2);
+        const cy0 = y + dy * (0.25 - r / 2);
+
+        const cx1 = x + dx * (0.75 + 0.5 * r);
+        const cy1 = y + dy * (0.75 + 0.5 * r);
+
+        renderRects.addRect(cx0 - rx, cy0 - ry, cx0 + rx, cy0 + ry, color0);
+        renderRects.addRect(cx1 - rx, cy1 - ry, cx1 + rx, cy1 + ry, color1);
     }
 
     // Draw blocked edges
@@ -1143,13 +1182,25 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
     const colorBlockedEdge = 0xff101010;
 
     for (const pair of graph.blockedEdges.pairs) {
-        const rx = 0.2 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
-        const ry = 0.2 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
+        const rx = 0.05 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
+        const ry = 0.05 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
         const x = (graph.nodes[pair[0]].coord[0] + graph.nodes[pair[1]].coord[0]) / 2;
         const y = (graph.nodes[pair[0]].coord[1] + graph.nodes[pair[1]].coord[1]) / 2;
 
         renderRects.addRect(x - rx, y - ry, x + rx, y + ry, colorBlockedEdge);
     }
+}
+
+function colorLerp(color0: number, color1: number, u: number): number {
+    const r = Math.floor(lerp(color0 & 0xff, color1 & 0xff, u));
+    const g = Math.floor(lerp((color0 >> 8) & 0xff, (color1 >> 8) & 0xff, u));
+    const b = Math.floor(lerp((color0 >> 16) & 0xff, (color1 >> 16) & 0xff, u));
+    const a = Math.floor(lerp((color0 >> 24) & 0xff, (color1 >> 24) & 0xff, u));
+    return (a << 24) + (b << 16) + (g << 8) + r;
+}
+
+function lerp(v0: number, v1: number, u: number): number {
+    return v0 + (v1 - v0) * u;
 }
 
 function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | undefined {
@@ -1182,6 +1233,7 @@ function createGraph(level: number): Graph {
                 coord: [x, y],
                 next: undefined,
                 group: 0,
+                sectionLength: 1,
                 captured: false,
             };
             graph.nodes.push(node);
@@ -1189,16 +1241,17 @@ function createGraph(level: number): Graph {
     }
 
     generateZigZagPath(graph);
+    tracePath(graph);
 
     shuffle(graph);
     join(graph);
 
-    blockUnusedEdges(graph, 0.3333);
+    blockUnusedEdges(graph, 1);
 
     shuffle(graph);
-//    join(graph);
+    join(graph);
 
-    tracePath(graph);
+    computeSubPathLengths(graph);
 
     return graph;
 }
@@ -1238,7 +1291,7 @@ function generateZigZagPath(graph: Graph) {
 }
 
 function shuffle(graph: Graph) {
-    const numShuffles = 4 * graph.extents[0] * graph.extents[1];
+    const numShuffles = 7 * graph.extents[0] * graph.extents[1];
     for (let n = numShuffles; n > 0; --n) {
         const x = randomInRange(graph.extents[0] - 1);
         const y = randomInRange(graph.extents[1] - 1);
@@ -1368,6 +1421,31 @@ function tracePath(graph: Graph) {
     // Record whether the current path is a win state.
 
     graph.pathIsWin = !graph.pathIsBlocked && currentPath.length === graph.nodes.length;
+}
+
+function computeSubPathLengths(graph: Graph) {
+    const nodeGroup = [];
+    const groupSize = [];
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        nodeGroup.push(i);
+        groupSize.push(1);
+    }
+
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        let i0 = i;
+        let i1 = graph.nodes[i0].next;
+        while (i1 !== undefined && nodeGroup[i1] !== nodeGroup[i] && !graph.blockedEdges.has(i0, i1)) {
+            ++groupSize[nodeGroup[i]];
+            --groupSize[nodeGroup[i1]];
+            nodeGroup[i1] = nodeGroup[i];
+            i0 = i1;
+            i1 = graph.nodes[i0].next;
+        }
+    }
+
+    for (let i = 0; i < graph.nodes.length; ++i) {
+        graph.nodes[i].sectionLength = groupSize[nodeGroup[i]];
+    }
 }
 
 function nextUncapturedNode(graph: Graph): number | undefined {
