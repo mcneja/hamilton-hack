@@ -302,7 +302,7 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 }
 
 function initState(): State {
-    const levelInit = 0;
+    const levelInit = 6;
     const graph = createGraph(levelInit);
     return {
         tLast: undefined,
@@ -1291,9 +1291,11 @@ function createGraph(level: number): Graph {
 
     generateZigZagPath(graph);
 
+    /*
     for (let i = 0; i < 200; ++i) {
         tryMoveStart(graph);    
     }
+    */
 
     tracePath(graph);
 
