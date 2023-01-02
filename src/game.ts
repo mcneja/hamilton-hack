@@ -125,6 +125,7 @@ type State = {
     enemy: Enemy;
     pointerGridPos: vec2 | undefined;
     dtCapture: number;
+    dtLose: number;
     level: number;
 }
 
@@ -312,7 +313,8 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 }
 
 function initState(): State {
-    const graph = createGraph(0);
+    const levelInit = 3;
+    const graph = createGraph(levelInit);
     return {
         tLast: undefined,
         gameState: GameState.Paused,
@@ -323,22 +325,22 @@ function initState(): State {
         },
         pointerGridPos: undefined,
         dtCapture: dtCapture,
-        level: 0,
+        dtLose: solveTimeLimit(graph),
+        level: levelInit,
     };
 }
 
 function resetState(state: State) {
-    /*
-    if (state.gameState === GameState.Lost) {
-        state.level = Math.max(0, state.level - 1);
-    } else if (state.gameState === GameState.Won) {
-        state.level = Math.min(30, state.level + 1);
-    }
-    */
     state.graph = createGraph(state.level);
     state.enemy.nodeIndex = state.graph.goal;
     state.enemy.progressFraction = 0;
+    state.dtCapture = dtCapture;
+    state.dtLose = solveTimeLimit(state.graph);
     state.gameState = GameState.Paused;
+}
+
+function solveTimeLimit(graph: Graph): number {
+    return Math.floor(graph.nodes.length * 0.4);
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
@@ -887,6 +889,14 @@ function updateState(state: State, dt: number) {
         }
         */
     }
+
+    if (state.gameState === GameState.Active) {
+        state.dtLose -= dt;
+        if (state.dtLose <= 0) {
+            state.dtLose = 0;
+            state.gameState = GameState.Lost;
+        }
+    }
 }
 
 function renderScene(renderer: Renderer, state: State) {
@@ -932,6 +942,8 @@ function renderScene(renderer: Renderer, state: State) {
         }
     }
     */
+
+    renderTimer(state.dtLose, renderer, screenSize);
 }
 
 function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
@@ -975,6 +987,48 @@ function graphCoordsFromCanvasPos(graphExtents: Coord, screenSize: vec2, pos: ve
     const gridY = pos[1] * (screenGridSizeY / screenSize[1]) - screenOffsetY;
 
     return vec2.fromValues(gridX, gridY);
+}
+
+function renderTimer(time: number, renderer: Renderer, screenSize: vec2) {
+    time = Math.ceil(time);
+    const strMsg = `${time}`;
+    const cCh = strMsg.length;
+
+    const color = 0xffffffff;
+
+    const minCharsX = 40;
+    const minCharsY = 20;
+    const scaleLargestX = Math.max(1, Math.floor(screenSize[0] / (8 * minCharsX)));
+    const scaleLargestY = Math.max(1, Math.floor(screenSize[1] / (16 * minCharsY)));
+    const scaleFactor = Math.min(scaleLargestX, scaleLargestY);
+    const pixelsPerCharX = 8 * scaleFactor;
+    const pixelsPerCharY = 16 * scaleFactor;
+    const numCharsX = screenSize[0] / pixelsPerCharX;
+    const numCharsY = screenSize[1] / pixelsPerCharY;
+    const offsetX = -Math.floor((screenSize[0] - cCh * pixelsPerCharX) / 2) / pixelsPerCharX;
+    const offsetY = 0;
+
+    const matScreenFromTextArea = mat4.create();
+    mat4.ortho(
+        matScreenFromTextArea,
+        offsetX,
+        offsetX + numCharsX,
+        offsetY,
+        offsetY + numCharsY,
+        1,
+        -1);
+    renderer.renderGlyphs.start(matScreenFromTextArea);
+
+    for (let i = 0; i < cCh; ++i) {
+        const glyphIndex = strMsg.charCodeAt(i);
+        renderer.renderGlyphs.addGlyph(
+            i, 0, i + 1, 1,
+            glyphIndex,
+            color
+        );
+    }
+
+    renderer.renderGlyphs.flush();
 }
 
 function renderTextLines(renderer: Renderer, screenSize: vec2, lines: Array<string>) {
@@ -1246,7 +1300,7 @@ function createGraph(level: number): Graph {
     shuffle(graph);
     join(graph);
 
-    blockUnusedEdges(graph, 1);
+    blockUnusedEdges(graph, 0.5);
 
     shuffle(graph);
     join(graph);
