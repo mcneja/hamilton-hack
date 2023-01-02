@@ -1301,6 +1301,11 @@ function createGraph(level: number): Graph {
     }
 
     generateZigZagPath(graph);
+
+    for (let i = 0; i < 200; ++i) {
+        tryMoveStart(graph);    
+    }
+
     tracePath(graph);
 
     shuffle(graph);
@@ -1486,6 +1491,60 @@ function canRotate(graph: Graph, coord: Coord): boolean {
 
     if (node11.next === i10)
         return false;
+
+    return true;
+}
+
+function tryMoveStart(graph: Graph): boolean {
+    const coord0 = graph.nodes[graph.start].coord;
+
+    const i0 = graph.start;
+
+    console.assert(graph.nodes[i0].next === undefined);
+
+    // Pick a neighboring node to connect the end to
+
+    const validNeighbors = [];
+
+    const dirs = [ [1, 0], [-1, 0], [0, -1], [0, 1] ];
+
+    for (const dir of dirs) {
+        const i1 = graphNodeIndexFromCoord(graph, coord0[0] + dir[0], coord0[1] + dir[1]);
+        if (i1 === undefined) {
+            continue;
+        }
+
+        if (graph.nodes[i1].next === i0) {
+            continue;
+        }
+
+        validNeighbors.push(i1);
+    }
+
+    if (validNeighbors.length === 0) {
+        return false;
+    }
+
+    const i1 = validNeighbors[randomInRange(validNeighbors.length)];
+
+    // The next node after i1 is the new ending node (we already know it isn't i0)
+
+    const i2 = graph.nodes[i1].next;
+
+    // Node i1 connects to i0 now
+
+    graph.nodes[i1].next = i0;
+
+    // Reverse everything from i2 back to i0
+
+    reverse(graph, i2, i0);
+
+    graph.start = i2;
+
+    console.assert(graph.nodes[i0].next !== undefined);
+    console.assert(graph.nodes[i2].next === undefined);
+
+    // Success!
 
     return true;
 }
