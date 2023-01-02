@@ -340,7 +340,7 @@ function resetState(state: State) {
 }
 
 function solveTimeLimit(graph: Graph): number {
-    return Math.floor(graph.nodes.length * 0.4);
+    return Math.floor(graph.nodes.length * 0.5);
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
