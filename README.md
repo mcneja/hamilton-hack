@@ -2,8 +2,6 @@
 
 Hacking minigame inspired by Hamiltonian paths.
 
-Run a web server out of the web subdirectory to play i
-
 ## Development
 
 This code is developed using parcel 2 (https://parceljs.org/).
