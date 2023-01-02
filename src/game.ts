@@ -125,7 +125,7 @@ type State = {
     enemy: Enemy;
     pointerGridPos: vec2 | undefined;
     dtCapture: number;
-    dtLose: number;
+    dtElapsed: number;
     level: number;
 }
 
@@ -325,7 +325,7 @@ function initState(): State {
         },
         pointerGridPos: undefined,
         dtCapture: dtCapture,
-        dtLose: solveTimeLimit(graph),
+        dtElapsed: 0,
         level: levelInit,
     };
 }
@@ -335,12 +335,12 @@ function resetState(state: State) {
     state.enemy.nodeIndex = state.graph.goal;
     state.enemy.progressFraction = 0;
     state.dtCapture = dtCapture;
-    state.dtLose = solveTimeLimit(state.graph);
+    state.dtElapsed = 0;
     state.gameState = GameState.Paused;
 }
 
 function solveTimeLimit(graph: Graph): number {
-    return Math.floor(graph.nodes.length * 0.5);
+    return Math.floor(graph.nodes.length * 0.75);
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
@@ -891,11 +891,7 @@ function updateState(state: State, dt: number) {
     }
 
     if (state.gameState === GameState.Active) {
-        state.dtLose -= dt;
-        if (state.dtLose <= 0) {
-            state.dtLose = 0;
-            state.gameState = GameState.Lost;
-        }
+        state.dtElapsed += dt;
     }
 }
 
@@ -943,7 +939,7 @@ function renderScene(renderer: Renderer, state: State) {
     }
     */
 
-    renderTimer(state.dtLose, renderer, screenSize);
+    renderTimer(state.dtElapsed, solveTimeLimit(state.graph), renderer, screenSize);
 }
 
 function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
@@ -989,9 +985,9 @@ function graphCoordsFromCanvasPos(graphExtents: Coord, screenSize: vec2, pos: ve
     return vec2.fromValues(gridX, gridY);
 }
 
-function renderTimer(time: number, renderer: Renderer, screenSize: vec2) {
-    time = Math.ceil(time);
-    const strMsg = `${time}`;
+function renderTimer(elapsedTime: number, timeLimit: number, renderer: Renderer, screenSize: vec2) {
+    elapsedTime = Math.floor(elapsedTime);
+    const strMsg = `${elapsedTime}/${timeLimit}`;
     const cCh = strMsg.length;
 
     const color = 0xffffffff;
@@ -1140,7 +1136,7 @@ function randomInRange(n: number): number {
 }
 
 function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
-    const r = 0.05;
+    const r = 0.1;
 
 //    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff80ff40;
 //    const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
@@ -1236,8 +1232,8 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
     const colorBlockedEdge = 0xff101010;
 
     for (const pair of graph.blockedEdges.pairs) {
-        const rx = 0.05 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
-        const ry = 0.05 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
+        const rx = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[1] - graph.nodes[pair[0]].coord[1]);
+        const ry = 0.1 + 0.5 * Math.abs(graph.nodes[pair[1]].coord[0] - graph.nodes[pair[0]].coord[0]);
         const x = (graph.nodes[pair[0]].coord[0] + graph.nodes[pair[1]].coord[0]) / 2;
         const y = (graph.nodes[pair[0]].coord[1] + graph.nodes[pair[1]].coord[1]) / 2;
 
