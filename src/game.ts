@@ -130,17 +130,11 @@ type State = {
 }
 
 function loadResourcesThenRun() {
-    console.log("starting load");
     loadImage(fontImage,
         (img: HTMLImageElement) => {
             main(img);
-        },
-        (err: any) => { });
-    // loadImage("font.png").then(() => {
-    //     console.log("loaded font.png");
-    // });
-
-    //loadImage('font.png').then((fontImage) => { main(fontImage as HTMLImageElement); });
+        }
+    );
 }
 
 function main(fontImage: HTMLImageElement) {
@@ -278,19 +272,14 @@ function isPaused(gameState: GameState): boolean {
     return gameState !== GameState.Active;
 }
 
-function loadImage(src: string, onLoad: (img: HTMLImageElement) => void, onError: (err: any) => void) {
-    console.log(`Loading Image ${src}`);
-    new URL(src, import.meta.url); // Tell parcel to build this in
-
+function loadImage(src: string, onLoad: (img: HTMLImageElement) => void) {
     const img = new Image();
     img.onload = () => {
-        console.log(`Finished loading Image ${src}`);
         onLoad(img);
     };
     img.onerror = (err: any) => {
         console.log(`Error loading Image ${src}`);
         console.log(err);
-        onError(err);
     }
     img.src = src;
 };
