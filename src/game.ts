@@ -246,7 +246,7 @@ function main(fontImage: HTMLImageElement) {
             }
         } else if (e.code === 'PageDown') {
             e.preventDefault();
-            if (state.level < 20) {
+            if (state.level < 30) {
                 ++state.level;
                 resetState(state);
                 requestUpdateAndRender();
@@ -313,7 +313,7 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 }
 
 function initState(): State {
-    const levelInit = 3;
+    const levelInit = 0;
     const graph = createGraph(levelInit);
     return {
         tLast: undefined,
@@ -904,7 +904,11 @@ function renderScene(renderer: Renderer, state: State) {
     if (state.pointerGridPos !== undefined) {
         const x = Math.floor(state.pointerGridPos[0]);
         const y = Math.floor(state.pointerGridPos[1]);
-        if (x >= 0 && y >= 0 && x < state.graph.extents[0] - 1 && y < state.graph.extents[1] - 1 && canRotate(state.graph, [x, y])) {
+        if (x >= 0 &&
+            y >= 0 &&
+            x < state.graph.extents[0] - 1 &&
+            y < state.graph.extents[1] - 1 &&
+            canRotate(state.graph, [x, y])) {
             renderer.renderDiscs(matScreenFromWorld, [{
                 position: [x + 0.5, y + 0.5],
                 radius: 0.75,
@@ -1270,8 +1274,8 @@ function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | u
 }
 
 function createGraph(level: number): Graph {
-    const sizeX = 2 * level + 3;
-    const sizeY = 2 * level + 3;
+    const sizeY = 5 + Math.floor(level / 3);
+    const sizeX = sizeY + (level % 3);
 
     let graph: Graph = {
         nodes: [],
