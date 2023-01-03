@@ -7,8 +7,6 @@ var fontImage = require('./font.png');
 
 window.onload = loadResourcesThenRun;
 
-const dtCapture = 0.75;
-
 class PairSet {
     pairs: Array<[number, number]> = [];
 
@@ -56,11 +54,12 @@ class PairSet {
     }
 }
 
+const statusBarHeight = 0.25; // as fraction of viewport height
+
 enum GameState {
     Paused,
     Active,
     Won,
-    Lost,
 }
 
 type Coord = [number, number];
@@ -70,7 +69,6 @@ type Node = {
     next: number | undefined; // index of next node in current path
     group: number | undefined;
     sectionLength: number;
-    captured: boolean;
 }
 
 type Graph = {
@@ -113,18 +111,11 @@ type Renderer = {
     renderGlyphs: RenderGlyphs;
 }
 
-type Enemy = {
-    nodeIndex: number;
-    progressFraction: number;
-}
-
 type State = {
     tLast: number | undefined;
     gameState: GameState;
     graph: Graph;
-    enemy: Enemy;
     pointerGridPos: vec2 | undefined;
-    dtCapture: number;
     dtElapsed: number;
     level: number;
 }
@@ -163,7 +154,7 @@ function main(fontImage: HTMLImageElement) {
         const x = Math.floor(gridPos[0]);
         const y = Math.floor(gridPos[1]);
         if (x < 0 || y < 0 || x >= state.graph.extents[0] - 1 || y >= state.graph.extents[1] - 1) {
-            if (state.gameState === GameState.Lost || state.gameState === GameState.Won) {
+            if (state.gameState === GameState.Won) {
                 resetState(state);
                 requestUpdateAndRender();
             }
@@ -176,12 +167,10 @@ function main(fontImage: HTMLImageElement) {
 
         computeSubPathLengths(state.graph);
 
-        if (state.gameState !== GameState.Lost) {
-            if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
-                state.gameState = GameState.Won;
-            } else if (state.gameState === GameState.Paused) {
-                state.gameState = GameState.Active;
-            }
+        if (state.graph.pathIsWin && state.gameState !== GameState.Won) {
+            state.gameState = GameState.Won;
+        } else if (state.gameState === GameState.Paused) {
+            state.gameState = GameState.Active;
         }
 
         requestUpdateAndRender();
@@ -238,14 +227,14 @@ function main(fontImage: HTMLImageElement) {
                 state.gameState = GameState.Active;
                 requestUpdateAndRender();
             }
-        } else if (e.code === 'PageDown') {
+        } else if (e.code === 'Period') {
             e.preventDefault();
             if (state.level < 30) {
                 ++state.level;
                 resetState(state);
                 requestUpdateAndRender();
             }
-        } else if (e.code === 'PageUp') {
+        } else if (e.code === 'Comma') {
             e.preventDefault();
             if (state.level > 0) {
                 --state.level;
@@ -302,18 +291,13 @@ function createRenderer(gl: WebGL2RenderingContext, fontImage: HTMLImageElement)
 }
 
 function initState(): State {
-    const levelInit = 6;
+    const levelInit = 3;
     const graph = createGraph(levelInit);
     return {
         tLast: undefined,
         gameState: GameState.Paused,
         graph: graph,
-        enemy: {
-            nodeIndex: graph.goal,
-            progressFraction: 0,
-        },
         pointerGridPos: undefined,
-        dtCapture: dtCapture,
         dtElapsed: 0,
         level: levelInit,
     };
@@ -321,15 +305,8 @@ function initState(): State {
 
 function resetState(state: State) {
     state.graph = createGraph(state.level);
-    state.enemy.nodeIndex = state.graph.goal;
-    state.enemy.progressFraction = 0;
-    state.dtCapture = dtCapture;
     state.dtElapsed = 0;
     state.gameState = GameState.Paused;
-}
-
-function solveTimeLimit(graph: Graph): number {
-    return Math.floor(graph.nodes.length * 0.75);
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
@@ -847,38 +824,6 @@ function updateAndRender(now: number, renderer: Renderer, state: State) {
 }
 
 function updateState(state: State, dt: number) {
-
-    /*
-    const enemySpeed = 1.0;
-    state.enemy.progressFraction += enemySpeed * dt;
-    while (state.enemy.progressFraction >= 1) {
-        state.enemy.progressFraction -= 1;
-        const nodeIndexNext = state.graph.nodes[state.enemy.nodeIndex].next;
-        if (nodeIndexNext === undefined || nodeIndexNext === state.graph.start) {
-            state.gameState = GameState.Lost;
-            state.enemy.progressFraction = 1;
-            break;
-        } else {
-            state.enemy.nodeIndex = nodeIndexNext;
-        }
-    }
-    */
-
-    state.dtCapture -= dt;
-    while (state.dtCapture <= 0) {
-        state.dtCapture += dtCapture;
-
-        /*
-        const i = nextUncapturedNode(state.graph);
-        if (i !== undefined) {
-            state.graph.nodes[i].captured = true;
-            if (i === state.graph.start) {
-                state.gameState = GameState.Lost;
-            }
-        }
-        */
-    }
-
     if (state.gameState === GameState.Active) {
         state.dtElapsed += dt;
     }
@@ -914,46 +859,27 @@ function renderScene(renderer: Renderer, state: State) {
 
     renderer.renderRects.flush();
 
-    /*
-    if (state.gameState !== GameState.Won) {
-        const i0 = state.enemy.nodeIndex;
-        if (i0 !== undefined) {
-            const i1 = state.graph.nodes[i0].next;
-            if (i1 !== undefined) {
-                const pos0 = state.graph.nodes[i0].coord;
-                const pos1 = state.graph.nodes[i1].coord;
-
-                const pos = vec2.create();
-                vec2.lerp(pos, pos0, pos1, state.enemy.progressFraction);
-
-                renderer.renderDiscs(matScreenFromWorld, [{
-                    position: pos,
-                    radius: 0.25,
-                    discColor: 0xff2020ff,
-                    glyphIndex: 69,
-                    glyphColor: 0xffe0e0ff,
-                }]);
-            }
-        }
-    }
-    */
-
-    renderTimer(state.dtElapsed, solveTimeLimit(state.graph), renderer, screenSize);
+    renderTimer(state.dtElapsed, renderer, screenSize);
 }
 
 function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
     const mapSizeX = graphExtents[0];
     const mapSizeY = graphExtents[1];
 
+    const mapScreenSizeX = screenSize[0];
+    const mapScreenSizeY = screenSize[1]; // * (1 - statusBarHeight);
+
+    // Wrong; need to put the map image in the proper area
+
     let rxMap: number, ryMap: number;
-    if (screenSize[0] * mapSizeY < screenSize[1] * mapSizeX) {
+    if (mapScreenSizeX * mapSizeY < mapScreenSizeY * mapSizeX) {
         // horizontal is limiting dimension
         rxMap = mapSizeX / 2;
-        ryMap = rxMap * screenSize[1] / screenSize[0];
+        ryMap = rxMap * mapScreenSizeY / mapScreenSizeX;
     } else {
         // vertical is limiting dimension
         ryMap = mapSizeY / 2;
-        rxMap = ryMap * screenSize[0] / screenSize[1];
+        rxMap = ryMap * mapScreenSizeX / mapScreenSizeY;
     }
     const cxMap = (mapSizeX - 1) / 2;
     const cyMap = (mapSizeY - 1) / 2;
@@ -984,9 +910,9 @@ function graphCoordsFromCanvasPos(graphExtents: Coord, screenSize: vec2, pos: ve
     return vec2.fromValues(gridX, gridY);
 }
 
-function renderTimer(elapsedTime: number, timeLimit: number, renderer: Renderer, screenSize: vec2) {
+function renderTimer(elapsedTime: number, renderer: Renderer, screenSize: vec2) {
     elapsedTime = Math.floor(elapsedTime);
-    const strMsg = `${elapsedTime}/${timeLimit}`;
+    const strMsg = `Elapsed Time: ${elapsedTime}`;
     const cCh = strMsg.length;
 
     const color = 0xffffffff;
@@ -1137,8 +1063,6 @@ function randomInRange(n: number): number {
 function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects, renderDiscs: RenderDiscs, matScreenFromWorld: mat4) {
     const r = 0.1;
 
-//    const colorPath = gameState === GameState.Won ? 0xffffff00 : gameState === GameState.Lost ? 0xff0000ff : 0xff80ff40;
-//    const colorLoop = gameState === GameState.Won ? 0xffa0a000 : gameState === GameState.Lost ? 0xff0000a0 : 0xff408020;
     const colorPath = 0xff00ffff;
     const colorLoop = 0xff204010;
 
@@ -1155,7 +1079,7 @@ function drawGraph(graph: Graph, gameState: GameState, renderRects: RenderRects,
         const x = node.coord[0];
         const y = node.coord[1];
 
-        const color = node.captured ? 0xff0000ff : 0xff102008;
+        const color = 0xff102008;
 
         discs.push({
             position: [x, y],
@@ -1263,7 +1187,7 @@ function graphNodeIndexFromCoord(graph: Graph, x: number, y: number): number | u
 }
 
 function createGraph(level: number): Graph {
-    const sizeY = 5 + Math.floor(level / 3);
+    const sizeY = 5 + 2 * Math.floor(level / 3);
     const sizeX = sizeY + (level % 3);
 
     let graph: Graph = {
@@ -1283,7 +1207,6 @@ function createGraph(level: number): Graph {
                 next: undefined,
                 group: 0,
                 sectionLength: 1,
-                captured: false,
             };
             graph.nodes.push(node);
         }
@@ -1611,16 +1534,6 @@ function computeSubPathLengths(graph: Graph) {
     for (let i = 0; i < graph.nodes.length; ++i) {
         graph.nodes[i].sectionLength = groupSize[nodeGroup[i]];
     }
-}
-
-function nextUncapturedNode(graph: Graph): number | undefined {
-    for (let i: number | undefined = graph.goal; i !== undefined; i = graph.nodes[i].next) {
-        if (!graph.nodes[i].captured) {
-            return i;
-        }
-    }
-
-    return undefined;
 }
 
 function before(graph: Graph, i0: number, i1: number): boolean {
