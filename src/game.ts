@@ -162,6 +162,10 @@ function main(fontImage: HTMLImageElement) {
         }
 
         if (!tryRotate(state.graph, [x, y])) {
+            if (state.gameState === GameState.Won) {
+                resetState(state);
+                requestUpdateAndRender();
+            }
             return;
         }
 
@@ -295,7 +299,7 @@ function initState(): State {
     const graph = createGraph(levelInit);
     return {
         tLast: undefined,
-        gameState: GameState.Paused,
+        gameState: graph.pathIsWin ? GameState.Won : GameState.Paused,
         graph: graph,
         pointerGridPos: undefined,
         dtElapsed: 0,
@@ -306,7 +310,7 @@ function initState(): State {
 function resetState(state: State) {
     state.graph = createGraph(state.level);
     state.dtElapsed = 0;
-    state.gameState = GameState.Paused;
+    state.gameState = state.graph.pathIsWin ? GameState.Won : GameState.Paused;
 }
 
 function createBeginFrame(gl: WebGL2RenderingContext): BeginFrame {
