@@ -54,7 +54,7 @@ class PairSet {
     }
 }
 
-const statusBarHeight = 0.25; // as fraction of viewport height
+const statusBarHeight = 0.05; // as fraction of viewport height
 
 enum GameState {
     Paused,
@@ -859,60 +859,104 @@ function renderScene(renderer: Renderer, state: State) {
 
     renderer.renderRects.flush();
 
-    renderTimer(state.dtElapsed, renderer, screenSize);
+    renderTimer(state.dtElapsed, state.gameState, renderer, screenSize);
 }
 
-function setupGraphViewMatrix(graphExtents: Coord, screenSize: vec2, matScreenFromWorld: mat4) {
-    const mapSizeX = graphExtents[0];
-    const mapSizeY = graphExtents[1];
+function setupGraphViewMatrix(graphExtents: Coord, screenPixelSize: vec2, matScreenFromWorld: mat4) {
+    const graphSizeX = graphExtents[0];
+    const graphSizeY = graphExtents[1];
 
-    const mapScreenSizeX = screenSize[0];
-    const mapScreenSizeY = screenSize[1]; // * (1 - statusBarHeight);
+    const viewportPixelSizeX = screenPixelSize[0];
+    const viewportPixelSizeY = screenPixelSize[1] * (1 - statusBarHeight);
 
-    // Wrong; need to put the map image in the proper area
-
-    let rxMap: number, ryMap: number;
-    if (mapScreenSizeX * mapSizeY < mapScreenSizeY * mapSizeX) {
+    let worldSizeX, worldSizeY;
+    if (viewportPixelSizeX * graphSizeY < viewportPixelSizeY * graphSizeX) {
         // horizontal is limiting dimension
-        rxMap = mapSizeX / 2;
-        ryMap = rxMap * mapScreenSizeY / mapScreenSizeX;
+        worldSizeX = graphSizeX;
+        worldSizeY = worldSizeX * viewportPixelSizeY / viewportPixelSizeX;
     } else {
         // vertical is limiting dimension
-        ryMap = mapSizeY / 2;
-        rxMap = ryMap * mapScreenSizeX / mapScreenSizeY;
+        worldSizeY = graphSizeY;
+        worldSizeX = worldSizeY * viewportPixelSizeX / viewportPixelSizeY;
     }
-    const cxMap = (mapSizeX - 1) / 2;
-    const cyMap = (mapSizeY - 1) / 2;
 
-    mat4.ortho(matScreenFromWorld, cxMap - rxMap, cxMap + rxMap, cyMap - ryMap, cyMap + ryMap, 1, -1);
+    const worldMinX = (worldSizeX - (graphSizeX - 1)) / -2;
+    const worldMinY = (worldSizeY - (graphSizeY - 1)) / -2;
+
+    const screenMinX = -1;
+    const screenMinY = -1 + 2 * statusBarHeight;
+
+    const screenSizeX = 2;
+    const screenSizeY = 2 * (1 - statusBarHeight);
+
+    const scaleScreenFromWorldX = screenSizeX / worldSizeX;
+    const scaleScreenFromWorldY = screenSizeY / worldSizeY;
+
+    const offsetScreenFromWorldX = screenMinX - scaleScreenFromWorldX * worldMinX;
+    const offsetScreenFromWorldY = screenMinY - scaleScreenFromWorldY * worldMinY;
+
+    matScreenFromWorld.fill(0);
+    matScreenFromWorld[0] = scaleScreenFromWorldX;
+    matScreenFromWorld[5] = scaleScreenFromWorldY;
+    matScreenFromWorld[10] = 1;
+    matScreenFromWorld[12] = offsetScreenFromWorldX;
+    matScreenFromWorld[13] = offsetScreenFromWorldY;
+    matScreenFromWorld[15] = 1;
 }
 
-function graphCoordsFromCanvasPos(graphExtents: Coord, screenSize: vec2, pos: vec2): vec2 {
-    const mapSizeX = graphExtents[0];
-    const mapSizeY = graphExtents[1];
+function graphCoordsFromCanvasPos(graphExtents: Coord, screenPixelSize: vec2, pos: vec2): vec2 {
+    const graphSizeX = graphExtents[0];
+    const graphSizeY = graphExtents[1];
 
-    let screenGridSizeX: number, screenGridSizeY: number;
-    if (screenSize[0] * mapSizeY < screenSize[1] * mapSizeX) {
+    const viewportPixelSizeX = screenPixelSize[0];
+    const viewportPixelSizeY = screenPixelSize[1] * (1 - statusBarHeight);
+
+    let worldSizeX, worldSizeY;
+    if (viewportPixelSizeX * graphSizeY < viewportPixelSizeY * graphSizeX) {
         // horizontal is limiting dimension
-        screenGridSizeX = mapSizeX;
-        screenGridSizeY = screenGridSizeX * screenSize[1] / screenSize[0];
+        worldSizeX = graphSizeX;
+        worldSizeY = worldSizeX * viewportPixelSizeY / viewportPixelSizeX;
     } else {
         // vertical is limiting dimension
-        screenGridSizeY = mapSizeY;
-        screenGridSizeX = screenGridSizeY * screenSize[0] / screenSize[1];
+        worldSizeY = graphSizeY;
+        worldSizeX = worldSizeY * viewportPixelSizeX / viewportPixelSizeY;
     }
-    const screenOffsetX = (screenGridSizeX - mapSizeX) / 2 + 0.5;
-    const screenOffsetY = (screenGridSizeY - mapSizeY) / 2 + 0.5;
 
-    const gridX = pos[0] * (screenGridSizeX / screenSize[0]) - screenOffsetX;
-    const gridY = pos[1] * (screenGridSizeY / screenSize[1]) - screenOffsetY;
+    const worldMinX = (worldSizeX - (graphSizeX - 1)) / -2;
+    const worldMinY = (worldSizeY - (graphSizeY - 1)) / -2;
+
+    const screenMinX = 0;
+    const screenMinY = screenPixelSize[1] * statusBarHeight;
+
+    const screenSizeX = viewportPixelSizeX;
+    const screenSizeY = viewportPixelSizeY;
+
+    const scaleWorldFromScreenX = worldSizeX / screenSizeX;
+    const scaleWorldFromScreenY = worldSizeY / screenSizeY;
+
+    const offsetWorldFromScreenX = worldMinX - scaleWorldFromScreenX * screenMinX;
+    const offsetWorldFromScreenY = worldMinY - scaleWorldFromScreenY * screenMinY;
+
+    const gridX = pos[0] * scaleWorldFromScreenX + offsetWorldFromScreenX;
+    const gridY = pos[1] * scaleWorldFromScreenY + offsetWorldFromScreenY;
 
     return vec2.fromValues(gridX, gridY);
 }
 
-function renderTimer(elapsedTime: number, renderer: Renderer, screenSize: vec2) {
+function renderTimer(elapsedTime: number, gameState: GameState, renderer: Renderer, screenSize: vec2) {
     elapsedTime = Math.floor(elapsedTime);
-    const strMsg = `Elapsed Time: ${elapsedTime}`;
+    let strMsg;
+    switch (gameState) {
+        case GameState.Active:
+            strMsg = `${elapsedTime} seconds`;
+            break;
+        case GameState.Paused:
+            strMsg = `${elapsedTime} seconds (paused)`;
+            break;
+        case GameState.Won:
+            strMsg = `Completed in ${elapsedTime} seconds`;
+            break;
+    }
     const cCh = strMsg.length;
 
     const color = 0xffffffff;
