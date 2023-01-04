@@ -1273,11 +1273,14 @@ function createGraph(level: number): Graph {
     shuffle(graph);
     join(graph);
 
-    blockUnusedEdges(graph, 0.5);
+    const solutionEdges = usedEdges(graph);
 
     shuffle(graph);
     join(graph);
 
+    blockUnusedEdges(graph, solutionEdges, 0.5);
+
+    tracePath(graph);
     computeSubPathLengths(graph);
 
     return graph;
@@ -1650,15 +1653,33 @@ function join(graph: Graph) {
     }
 }
 
-function blockUnusedEdges(graph: Graph, unusedEdgeFraction: number) {
+function usedEdges(graph: Graph): PairSet {
     const edges = new PairSet();
+
+    let i0 = graph.goal;
+    while (true) {
+        let i1 = graph.nodes[i0].next;
+        if (i1 === undefined) {
+            break;
+        }
+        edges.add(i0, i1);
+        i0 = i1;
+    }
+
+    return edges;
+}
+
+function blockUnusedEdges(graph: Graph, solutionEdges: PairSet, unusedEdgeFraction: number) {
+    const currentlyUsedEdges = usedEdges(graph);
+
+    const unusedEdges = new PairSet();
 
     for (let x = 0; x < graph.extents[0] - 1; ++x) {
         for (let y = 0; y < graph.extents[1]; ++y) {
             const i0 = graphNodeIndexFromCoord(graph, x, y);
             const i1 = graphNodeIndexFromCoord(graph, x + 1, y);
-            if (graph.nodes[i0].next !== i1 && graph.nodes[i1].next !== i0) {
-                edges.add(i0, i1);
+            if (i0 !== undefined && i1 !== undefined && !solutionEdges.has(i0, i1)) {
+                unusedEdges.add(i0, i1);
             }
         }
     }
@@ -1667,19 +1688,43 @@ function blockUnusedEdges(graph: Graph, unusedEdgeFraction: number) {
         for (let y = 0; y < graph.extents[1] - 1; ++y) {
             const i0 = graphNodeIndexFromCoord(graph, x, y);
             const i1 = graphNodeIndexFromCoord(graph, x, y + 1);
-            if (graph.nodes[i0].next !== i1 && graph.nodes[i1].next !== i0) {
-                edges.add(i0, i1);
+            if (i0 !== undefined && i1 !== undefined && !solutionEdges.has(i0, i1)) {
+                unusedEdges.add(i0, i1);
             }
         }
     }
 
-    let numEdgesToBlock = Math.min(edges.pairs.length, Math.floor(edges.pairs.length * unusedEdgeFraction));
+    shuffleArray(unusedEdges.pairs);
+    unusedEdges.pairs.sort((a, b) => {
+        const aCurrentlyUsed = currentlyUsedEdges.has(a[0], a[1]);
+        const bCurrentlyUsed = currentlyUsedEdges.has(b[0], b[1]);
+        if (aCurrentlyUsed) {
+            if (bCurrentlyUsed) {
+                return 0;
+            } else {
+                return -1;
+            }
+        } else {
+            if (bCurrentlyUsed) {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+    });
 
-    while (numEdgesToBlock > 0) {
-        const i = randomInRange(edges.pairs.length);
-        graph.blockedEdges.add(edges.pairs[i][0], edges.pairs[i][1]);
-        edges.pairs[i] = edges.pairs[edges.pairs.length - 1];
-        --edges.pairs.length;
-        --numEdgesToBlock;
+    let numEdgesToBlock = Math.min(unusedEdges.pairs.length, Math.floor(unusedEdges.pairs.length * unusedEdgeFraction));
+
+    for (let i = 0; i < numEdgesToBlock; ++i) {
+        graph.blockedEdges.add(unusedEdges.pairs[i][0], unusedEdges.pairs[i][1]);
+    }
+}
+
+function shuffleArray<T>(array: Array<T>) {
+    for (let i = array.length - 1; i > 0; --i) {
+        let j = randomInRange(i + 1);
+        let temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
     }
 }
