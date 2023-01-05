@@ -1695,6 +1695,8 @@ function blockUnusedEdges(graph: Graph, solutionEdges: PairSet, unusedEdgeFracti
     }
 
     shuffleArray(unusedEdges.pairs);
+
+    /*
     unusedEdges.pairs.sort((a, b) => {
         const aCurrentlyUsed = currentlyUsedEdges.has(a[0], a[1]);
         const bCurrentlyUsed = currentlyUsedEdges.has(b[0], b[1]);
@@ -1712,6 +1714,7 @@ function blockUnusedEdges(graph: Graph, solutionEdges: PairSet, unusedEdgeFracti
             }
         }
     });
+    */
 
     let numEdgesToBlock = Math.min(unusedEdges.pairs.length, Math.floor(unusedEdges.pairs.length * unusedEdgeFraction));
 
