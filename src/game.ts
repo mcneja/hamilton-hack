@@ -1275,7 +1275,7 @@ function createGraph(level: number): Graph {
 
     const solutionEdges = usedEdges(graph);
 
-    shuffle(graph);
+    allShuffle(graph);
     join(graph);
 
     blockUnusedEdges(graph, solutionEdges, 0.5);
@@ -1327,6 +1327,17 @@ function shuffle(graph: Graph) {
         const y = randomInRange(graph.extents[1] - 1);
 
         tryRotate(graph, [x, y]);
+    }
+}
+
+function allShuffle(graph: Graph) {
+    const coords = graph.nodes.map(node => node.coord);
+    const numShuffles = 7 * graph.extents[0] * graph.extents[1];
+    for (let n = numShuffles; n > 0; --n) {
+        shuffleArray(coords);
+        for (const coord of coords) {
+            tryRotate(graph, coord);
+        }
     }
 }
 
